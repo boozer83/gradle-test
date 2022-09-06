@@ -1,0 +1,23 @@
+{
+  "offset": 0,
+  "size": 20,
+  "total": 1,
+  "domains": [
+    {
+      "created_at": "2021-06-15T03:04:39Z",
+      "description": "test domain",
+      "disabled_at": "2021-06-15T03:04:39Z",
+      "enabled": true,
+      "federated_domain": [],
+      "id": "__DOMAIN_ID__",
+      "kic_login_enabled": false,
+      "mfa_enabled": false,
+      "name": "domain-01",
+      "owner_id": "__OWNER_USER_ID__",
+      "project_creation_enabled": false,
+      "user_creation_enabled": false,
+      "user_deletion_enabled": false,
+      "user_modification_enabled": false
+    }
+  ]
+}

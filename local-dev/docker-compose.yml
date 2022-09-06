@@ -1,0 +1,35 @@
+## Local Test Docker Compose
+version: '3'
+
+services:
+
+  mysql:
+    image: idock.daumkakao.io/cloud-service/mysql:5.7
+    restart: always
+    environment:
+      LANG: C.UTF-8
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: sample
+      MYSQL_USER: user
+      MYSQL_PASSWORD: secret
+    command:
+      - --ssl=0
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - ./.volumes/db:/var/lib/mysql
+      - ./config/db/:/docker-entrypoint-initdb.d/
+    ports:
+      - "3306:3306"
+
+  app:
+    build:
+      context: ../
+      dockerfile: ./Dockerfile
+    image: idock.daumkakao.io/cloud-service/sample:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+    profiles:
+      - build-app
+    ports:
+      - "8080:8080"

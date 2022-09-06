@@ -1,0 +1,28 @@
+== Simple API
+
+=== 생성
+
+==== Request
+
+include::{snippets}/sample-create/http-request.adoc[]
+
+include::{snippets}/sample-create/curl-request.adoc[]
+
+===== Request Header
+include::{snippets}/sample-create/request-headers.adoc[]
+
+===== Request Body
+
+include::{snippets}/sample-create/request-body.adoc[]
+
+include::{snippets}/sample-create/request-fields.adoc[]
+
+==== Response
+
+include::{snippets}/sample-create/http-response.adoc[]
+
+===== Response Body
+
+include::{snippets}/sample-create/response-body.adoc[]
+
+include::{snippets}/sample-create/response-fields.adoc[]

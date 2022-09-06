@@ -1,0 +1,379 @@
+buildscript {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        gradlePluginPortal()
+        maven { url "https://repo.spring.io/plugins-release" }
+    }
+    dependencies {
+        //jhipster-needle-gradle-buildscript-dependency - JHipster will add additional gradle build script plugins here
+    }
+}
+
+plugins {
+    id "java"
+    id "maven-publish"
+    id "idea"
+    id "jacoco"
+    id "org.springframework.boot"
+    id "com.google.cloud.tools.jib"
+    id "com.gorylenko.gradle-git-properties"
+    id "net.ltgt.apt-eclipse"
+    id "net.ltgt.apt-idea"
+    id "net.ltgt.apt"
+    id "org.liquibase.gradle"
+    id "org.sonarqube"
+    id "io.spring.nohttp"
+    //jhipster-needle-gradle-plugins - JHipster will add additional gradle plugins here
+    id "com.github.johnrengelman.processes" version "0.5.0"
+    id "org.springdoc.openapi-gradle-plugin" version "1.3.0"
+    id "org.asciidoctor.jvm.convert" version "3.3.2"
+}
+
+group = "io.kakaoi"
+version = "0.0.1-SNAPSHOT"
+
+description = ""
+
+sourceCompatibility=1.8
+targetCompatibility=1.8
+assert System.properties["java.specification.version"] == "1.8" || "11" || "12" || "13" || "14"
+
+apply from: "gradle/docker.gradle"
+apply from: "gradle/sonar.gradle"
+//jhipster-needle-gradle-apply-from - JHipster will add additional gradle scripts to be applied here
+
+if (project.hasProperty("prod") || project.hasProperty("gae")) {
+    apply from: "gradle/profile_prod.gradle"
+} else if (project.hasProperty("dev-exntu")) {
+    apply from: "gradle/profile_dev_exntu.gradle"
+} else if (project.hasProperty("dev-kakao")) {
+    apply from: "gradle/profile_dev_kakao.gradle"
+} else if (project.hasProperty("stg")) {
+    apply from: "gradle/profile_stg.gradle"
+} else {
+    apply from: "gradle/profile_dev.gradle"
+}
+
+if (project.hasProperty("war")) {
+    apply from: "gradle/war.gradle"
+}
+
+if (project.hasProperty("gae")) {
+    apply plugin: 'maven'
+    apply plugin: 'org.springframework.boot.experimental.thin-launcher'
+    apply plugin: 'io.spring.dependency-management'
+
+    dependencyManagement {
+        imports {
+            mavenBom "io.github.jhipster:jhipster-dependencies:${jhipster_dependencies_version}"
+        }
+    }
+    appengineStage.dependsOn thinResolve
+}
+
+
+idea {
+    module {
+        excludeDirs += files("node_modules")
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}
+
+eclipse {
+    sourceSets {
+        main {
+            java {
+                srcDirs += ["build/generated/sources/annotationProcessor/java/main"]
+            }
+        }
+    }
+}
+
+defaultTasks "bootRun"
+
+springBoot {
+    mainClassName = "io.kakaoi.Application"
+}
+
+ext {
+    snippetsDir = file('build/generated-snippets')
+}
+
+test {
+    outputs.dir project.snippetsDir
+    useJUnitPlatform()
+    exclude "**/*IT*", "**/*IntTest*"
+
+    testLogging {
+        events 'FAILED', 'SKIPPED'
+    }
+    // uncomment if the tests reports are not generated
+    // see https://github.com/jhipster/generator-jhipster/pull/2771 and https://github.com/jhipster/generator-jhipster/pull/4484
+    // ignoreFailures true
+    reports.html.enabled = false
+}
+
+task integrationTest(type: Test) {
+    useJUnitPlatform()
+    description = "Execute integration tests."
+    group = "verification"
+    include "**/*IT*", "**/*IntTest*"
+
+    testLogging {
+        events 'FAILED', 'SKIPPED'
+    }
+
+    if (project.hasProperty('testcontainers')) {
+        environment 'spring.profiles.active', 'testcontainers'
+    }
+
+    // uncomment if the tests reports are not generated
+    // see https://github.com/jhipster/generator-jhipster/pull/2771 and https://github.com/jhipster/generator-jhipster/pull/4484
+    // ignoreFailures true
+    reports.html.enabled = false
+}
+
+check.dependsOn integrationTest
+task testReport(type: TestReport) {
+    destinationDir = file("$buildDir/reports/tests")
+    reportOn test
+}
+
+task integrationTestReport(type: TestReport) {
+    destinationDir = file("$buildDir/reports/tests")
+    reportOn integrationTest
+}
+
+if (!project.hasProperty("runList")) {
+    project.ext.runList = "main"
+}
+
+project.ext.diffChangelogFile = "src/main/resources/config/liquibase/changelog/" + new Date().format("yyyyMMddHHmmss") + "_changelog.xml"
+
+liquibase {
+    activities {
+        main {
+            driver "com.mysql.cj.jdbc.Driver"
+            url "jdbc:mysql://localhost:3306/registry"
+            username "root"
+            password ""
+            changeLogFile "src/main/resources/config/liquibase/master.xml"
+            defaultSchemaName "registry"
+            logLevel "debug"
+            classpath "src/main/resources/"
+        }
+        diffLog {
+            driver "com.mysql.cj.jdbc.Driver"
+            url "jdbc:mysql://localhost:3306/registry"
+            username "root"
+            password ""
+            changeLogFile project.ext.diffChangelogFile
+            referenceUrl "hibernate:spring:com.kakaoi.domain?dialect=org.hibernate.dialect.MySQL8Dialect&hibernate.physical_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringPhysicalNamingStrategy&hibernate.implicit_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy"
+            defaultSchemaName "registry"
+            logLevel "debug"
+            classpath "$buildDir/classes/java/main"
+            excludeObjects "oauth_access_token, oauth_approvals, oauth_client_details, oauth_client_token, oauth_code, oauth_refresh_token"
+        }
+    }
+
+    runList = project.ext.runList
+}
+
+gitProperties {
+    failOnNoGitDirectory = false
+    keys = ["git.branch", "git.commit.id.abbrev", "git.commit.id.describe"]
+}
+
+checkstyle {
+    toolVersion '${checkstyle_version}'
+    configFile file("checkstyle.xml")
+    checkstyleTest.enabled = false
+}
+nohttp {
+    source.include "build.gradle", "README.md"
+}
+
+configurations {
+    providedRuntime
+    implementation.exclude module: "spring-boot-starter-tomcat"
+    all {
+        resolutionStrategy {
+            // Inherited version from Spring Boot can't be used because of regressions:
+            // To be removed as soon as spring-boot use the same version
+            force 'org.liquibase:liquibase-core:3.9.0'
+
+            // 라이브러리 버전 고정
+            // 주의! 버전 올리면 카프카가 동작하지 않는 현상 발생.
+            forcedModules = ['org.apache.kafka:kafka-clients:2.3.1']
+        }
+    }
+    asciidoctorExtensions
+}
+
+bootJar {
+    archiveFileName = 'server.jar'
+    dependsOn asciidoctor
+    from ("${asciidoctor.outputDir}/html5") {
+        into 'static/docs'
+    }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    //jhipster-needle-gradle-repositories - JHipster will add additional repositories
+}
+
+dependencies {
+    // import JHipster dependencies BOM
+    if (!project.hasProperty("gae")) {
+        implementation platform("io.github.jhipster:jhipster-dependencies:${jhipster_dependencies_version}")
+    }
+
+    // Use ", version: jhipster_dependencies_version, changing: true" if you want
+    // to use a SNAPSHOT release instead of a stable release
+    implementation group: "io.github.jhipster", name: "jhipster-framework"
+    implementation "javax.annotation:javax.annotation-api"
+    implementation "io.dropwizard.metrics:metrics-core"
+    implementation "io.micrometer:micrometer-registry-prometheus"
+    implementation "net.logstash.logback:logstash-logback-encoder"
+    // jackson 2.12.6.1 version bump
+    implementation(platform("com.fasterxml.jackson:jackson-bom:${jackson_bom_version}"))
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-hppc"
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
+    implementation "com.fasterxml.jackson.module:jackson-module-jaxb-annotations"
+    implementation "com.fasterxml.jackson.datatype:jackson-datatype-hibernate5"
+    implementation "com.fasterxml.jackson.core:jackson-annotations"
+    implementation "com.fasterxml.jackson.core:jackson-databind"
+    implementation "com.fasterxml.jackson.module:jackson-module-afterburner"
+    implementation "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml"
+    implementation "com.fasterxml.jackson.module:jackson-module-kotlin"
+    implementation "org.hibernate:hibernate-core"
+    implementation "com.zaxxer:HikariCP"
+    implementation "org.apache.commons:commons-lang3"
+    implementation "commons-codec:commons-codec"
+    implementation "commons-io:commons-io:${commons_io_version}"
+    implementation "org.apache.commons:commons-compress:${commons_compress_version}"
+    implementation "javax.transaction:javax.transaction-api"
+    implementation "org.hibernate:hibernate-entitymanager"
+    implementation "org.hibernate.validator:hibernate-validator:${hibernate_validator_version}"
+    implementation "org.liquibase:liquibase-core"
+    liquibaseRuntime "org.liquibase:liquibase-core"
+    liquibaseRuntime "org.liquibase.ext:liquibase-hibernate5:${liquibase_hibernate5_version}"
+    liquibaseRuntime sourceSets.main.compileClasspath
+    implementation "org.springframework.boot:spring-boot-loader-tools"
+
+    // Logging Security Patch
+    implementation "org.springframework.boot:spring-boot-starter-logging:${spring_boot_version}"
+    implementation(platform("org.apache.logging.log4j:log4j-bom:${log4j2_version}"))
+    implementation "ch.qos.logback:logback-classic:${logback_version}"
+
+    // spring boot fix version bump
+    implementation "org.springframework.boot:spring-boot-starter-actuator:${spring_boot_version}"
+    implementation "org.springframework.boot:spring-boot-starter-aop:${spring_boot_version}"
+    implementation "org.springframework.boot:spring-boot-starter-data-jpa:${spring_boot_version}"
+    implementation "org.springframework.boot:spring-boot-starter-security:${spring_boot_version}"
+    implementation ("org.springframework.boot:spring-boot-starter-web:${spring_boot_version}") {
+        exclude module: "spring-boot-starter-tomcat"
+    }
+    implementation "org.springframework.boot:spring-boot-starter-undertow:${spring_boot_version}"
+    implementation "org.springframework.boot:spring-boot-starter-thymeleaf:${spring_boot_version}"
+    implementation "org.zalando:problem-spring-web"
+    implementation ("org.springframework.boot:spring-boot-starter-cloud-connectors") {
+        exclude module: "spring-cloud-cloudfoundry-connector"
+        exclude module: "spring-cloud-heroku-connector"
+    }
+
+    // spring framework fix version bump
+    implementation "org.springframework:spring-webmvc:${spring_core_version}"
+    implementation "org.springframework:spring-orm:${spring_core_version}"
+    implementation "org.springframework:spring-context-support:${spring_core_version}"
+    implementation "org.springframework:spring-aspects:${spring_core_version}"
+
+    // undertow, thymeleaf fix version bump
+    implementation "io.undertow:undertow-websockets-jsr:${undertow_version}"
+    implementation "org.thymeleaf:thymeleaf-spring5:${thymeleaf_version}"
+
+    // spring security fix version bump
+    implementation "org.springframework.security:spring-security-config:${spring_security_version}"
+    implementation "org.springframework.security:spring-security-data:${spring_security_version}"
+    implementation "org.springframework.security:spring-security-web:${spring_security_version}"
+
+    implementation "org.springframework.kafka:spring-kafka"
+
+    // mysql fix version bump
+    implementation "mysql:mysql-connector-java:${mysql_jdbc_version}"
+    liquibaseRuntime "mysql:mysql-connector-java:${mysql_jdbc_version}"
+    annotationProcessor "org.hibernate:hibernate-jpamodelgen:${hibernate_version}"
+    annotationProcessor "org.glassfish.jaxb:jaxb-runtime:${jaxb_runtime_version}"
+    annotationProcessor "org.springframework.boot:spring-boot-configuration-processor:${spring_boot_version}"
+
+    implementation platform('org.testcontainers:testcontainers-bom:1.16.3')
+    testImplementation "org.testcontainers:mysql"
+    testImplementation ("org.springframework.boot:spring-boot-starter-test:${spring_boot_version}") {
+        exclude group: "org.junit.vintage", module: "junit-vintage-engine"
+    }
+    testImplementation "org.springframework.security:spring-security-test:${spring_security_version}"
+    testImplementation "org.springframework.boot:spring-boot-test"
+    asciidoctorExtensions "org.springframework.restdocs:spring-restdocs-asciidoctor:2.0.6.RELEASE"
+    testImplementation "org.springframework.restdocs:spring-restdocs-mockmvc:2.0.6.RELEASE"
+    testImplementation "com.tngtech.archunit:archunit-junit5-api:${archunit_junit5_version}"
+    testRuntimeOnly "com.tngtech.archunit:archunit-junit5-engine:${archunit_junit5_version}"
+    testImplementation "com.h2database:h2"
+    //jhipster-needle-gradle-dependency - JHipster will add additional dependencies here
+
+    // okhttp httpclient
+    implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.9.2'
+
+    // openapi spec(swagger) 3.0 springdoc
+    implementation ('org.springdoc:springdoc-openapi-ui:1.5.10') {
+        exclude group: 'org.springframework.boot', module: 'spring-boot-autoconfigure'
+        exclude group: 'org.springframework', module: 'spring-web'
+        exclude group: 'org.springframework', module: 'spring-webmvc'
+    }
+    implementation ('org.springdoc:springdoc-openapi-security:1.5.10') {
+        exclude group: 'org.springdoc', module: 'springdoc-openapi-common'
+        exclude group: 'org.springframework.security', module: 'spring-security-core'
+    }
+
+    // shedlock-spring
+    implementation ('net.javacrumbs.shedlock:shedlock-spring:4.27.0') {
+        exclude group: 'org.springframework', module: 'spring-context'
+    }
+    implementation ('net.javacrumbs.shedlock:shedlock-provider-jdbc-template:4.27.0') {
+        exclude group: 'org.springframework', module: 'spring-jdbc'
+    }
+}
+
+if (project.hasProperty("gae")) {
+    task createPom {
+        def basePath = 'build/resources/main/META-INF/maven'
+        doLast {
+            pom {
+                withXml(dependencyManagement.pomConfigurer)
+            }.writeTo("${basePath}/${project.group}/${project.name}/pom.xml")
+        }
+    }
+    bootJar.dependsOn = [createPom]
+}
+
+task cleanResources(type: Delete) {
+    delete "build/resources"
+}
+
+wrapper {
+    gradleVersion = "6.9.2"
+}
+
+asciidoctor {
+    configurations "asciidoctorExtensions"
+    inputs.dir project.snippetsDir
+    dependsOn test
+}
+
+
+compileJava.dependsOn processResources
+processResources.dependsOn bootBuildInfo

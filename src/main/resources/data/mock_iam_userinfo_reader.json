@@ -1,0 +1,43 @@
+{
+  "authToken": "__CLOUD_IAM_TOKEN__",
+  "domain": {
+    "id": "__DOMAIN_ID__",
+    "name": "test-domain"
+  },
+  "project": {
+    "domain": {
+      "id": "__DOMAIN_ID__",
+      "name": "test-domain"
+    },
+    "id": "__PROJECT_ID__",
+    "name": "test-project"
+  },
+  "roles": [
+    {
+      "description": "reader role",
+      "domain_id": "__DOMAIN_ID__",
+      "id": "__ROLE_ID_READER__",
+      "name": "reader"
+    }
+  ],
+  "user": {
+    "created_at": "2021-08-05",
+    "default_project_id": "__PROJECT_ID__",
+    "domain": {
+      "id": "__DOMAIN_ID__",
+      "name": "test-domain"
+    },
+    "email": "reader@kakaoi.io",
+    "enabled": true,
+    "id": "__READER_USER_ID__",
+    "name": "reader@kakaoi.io",
+    "nickname": "reader",
+    "password_expires_at": "2099-12-31",
+    "profile_url": "http://www.peanuts.com/sites/default/files/li-color.jpg",
+    "realname": "Reader",
+    "roles": [
+      "reader"
+    ],
+    "status": "ACTIVE"
+  }
+}
