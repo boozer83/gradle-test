@@ -6,8 +6,7 @@ namespace: default
 
 app:
   profile: stg
-  image: idock.daumkakao.io/cloud-service/sample:stg
-  replicaCount: 5
+  replicaCount: 1
   service:
     type: ClusterIP
     nodePort:
