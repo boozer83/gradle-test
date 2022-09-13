@@ -10,7 +10,7 @@ app:
   profile:
   replicaCount: 1
   hostAliases: []
-  image: https://cloudpipeline.kr-central-1.kcr.dev/test/image:latest
+  image: cloudpipeline.kr-central-1.kcr.dev/test/image:latest
   resources: {}
   service:
     type: NodePort
