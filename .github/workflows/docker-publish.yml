@@ -33,7 +33,7 @@ jobs:
       - name: Log into registry 
         uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
         with:
-          registry: idock.daumkakao.io
+          registry: docker.io
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
@@ -45,6 +45,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: idock.daumkakao.io/cloud-service/kic-cdn:${{ github.event.inputs.tag }}
+          tags: docker.io/boozer83/test:${{ github.event.inputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
