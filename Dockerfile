@@ -10,7 +10,7 @@ RUN gradle clean bootJar --exclude-task asciidoctor --exclude-task test
 
 ###
 
-FROM eclipse-temurin:8-jre-focal AS app
+FROM docker.io/eclipse-temurin:8-jre-focal AS app
 
 # example: os update / install skopeo, kubectl / remove apt update cache
 #RUN sed -i -re "s/([a-z]{2}.)?archive.ubuntu.com|security.ubuntu.com/mirror.kakao.com/g" /etc/apt/sources.list; \
