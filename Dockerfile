@@ -1,4 +1,4 @@
-FROM cloudpipeline.kr-central-1.kcr.dev/test/gradle:6.4.1-jdk8 AS build
+FROM cloudpipeline.kr-central-1.kcr.dev/tekton-task/gradle:6.4.1-jdk8 AS build
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN gradle clean bootJar --exclude-task asciidoctor --exclude-task test
 
 ###
 
-FROM cloudpipeline.kr-central-1.kcr.dev/test/eclipse-temurin:8-jre-focal AS app
+FROM eclipse-temurin:8-jre-focal AS app
 
 # example: os update / install skopeo, kubectl / remove apt update cache
 #RUN sed -i -re "s/([a-z]{2}.)?archive.ubuntu.com|security.ubuntu.com/mirror.kakao.com/g" /etc/apt/sources.list; \
