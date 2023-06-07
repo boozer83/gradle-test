@@ -43,22 +43,6 @@ spring:
         prepStmtCacheSqlLimit: 2048
         useServerPrepStmts: true
       maximum-pool-size: 10
-  jpa:
-    database: mysql
-    show-sql: true
-    hibernate:
-      ddl-auto: none
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.MySQL5InnoDBDialect
-        format_sql: false
-        jdbc:
-          time_zone: Asia/Seoul
-        hbm2ddl:
-  #          import_files: /sql/init.sql, /sql/default.sql
-  #          import_files: /sql/default.sql
-  liquibase:
-    contexts: dev
   mail:
     host: localhost
     port: 25

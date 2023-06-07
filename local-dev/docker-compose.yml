@@ -1,35 +1,22 @@
-## Local Test Docker Compose
 version: '3'
 
 services:
-
-  mysql:
-    image: idock.daumkakao.io/cloud-service/mysql:5.7
-    restart: always
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.2.1
     environment:
-      LANG: C.UTF-8
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: sample
-      MYSQL_USER: user
-      MYSQL_PASSWORD: secret
-    command:
-      - --ssl=0
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-    volumes:
-      - ./.volumes/db:/var/lib/mysql
-      - ./config/db/:/docker-entrypoint-initdb.d/
-    ports:
-      - "3306:3306"
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
 
-  app:
-    build:
-      context: ../
-      dockerfile: ./Dockerfile
-    image: idock.daumkakao.io/cloud-service/sample:latest
-    environment:
-      SPRING_PROFILES_ACTIVE: local
-    profiles:
-      - build-app
+  kafka.local:
+    image: confluentinc/cp-kafka:7.2.1
+    depends_on:
+      - zookeeper
     ports:
-      - "8080:8080"
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFAK_LISTENERS: PLAINTEXT://kafka.local:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka.local:9092

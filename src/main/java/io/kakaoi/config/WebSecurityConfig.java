@@ -1,6 +1,8 @@
 package io.kakaoi.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.kakaoi.service.iam.security.CloudIamAuthenticationFilter;
+import io.kakaoi.service.iam.security.CloudIamAuthenticationProvider;
 import io.kakaoi.web.rest.Result;
 import org.springframework.boot.autoconfigure.security.SecurityProperties;
 import org.springframework.context.annotation.Bean;
@@ -34,14 +36,14 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
     private final CorsFilter corsFilter;
 
-    private final CloudIAMAuthProvider cloudIAMAuthProvider;
+    private final CloudIamAuthenticationProvider cloudIamAuthenticationProvider;
 
     private final ObjectMapper objectMapper;
 
-    public WebSecurityConfig(ApplicationProperties applicationProperties, CorsFilter corsFilter, CloudIAMAuthProvider cloudIAMAuthProvider, ObjectMapper objectMapper) {
+    public WebSecurityConfig(ApplicationProperties applicationProperties, CorsFilter corsFilter, CloudIamAuthenticationProvider cloudIamAuthenticationProvider, ObjectMapper objectMapper) {
         this.applicationProperties = applicationProperties;
         this.corsFilter = corsFilter;
-        this.cloudIAMAuthProvider = cloudIAMAuthProvider;
+        this.cloudIamAuthenticationProvider = cloudIamAuthenticationProvider;
         this.objectMapper = objectMapper;
     }
 
@@ -53,11 +55,11 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 
     /**
      * AuthenticationProvider를 등록한다.
-     * 여기선 {@link CloudIAMAuthProvider}를 등록한다.
+     * 여기선 {@link CloudIamAuthenticationProvider}를 등록한다.
      */
     @Override
     protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-        auth.authenticationProvider(cloudIAMAuthProvider);
+        auth.authenticationProvider(cloudIamAuthenticationProvider);
     }
 
     @Override
@@ -93,11 +95,11 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
     }
 
     /**
-     * {@link CloudIAMAuthFilter}의 객체를 만든다.
+     * {@link CloudIamAuthenticationFilter}의 객체를 만든다.
      * @return CloudIAMAuthFilter의 객체
      */
-    private CloudIAMAuthFilter cloudIAMAuthFilter() throws Exception {
-        return new CloudIAMAuthFilter(authenticationManagerBean(), authenticationFailureHandler());
+    private CloudIamAuthenticationFilter cloudIAMAuthFilter() throws Exception {
+        return new CloudIamAuthenticationFilter(authenticationManagerBean(), authenticationFailureHandler());
     }
 
     /**

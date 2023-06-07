@@ -1,14 +1,11 @@
 package io.kakaoi.domain;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.kakaoi.config.Constants;
-import io.kakaoi.util.SecurityUtils;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-import org.springframework.util.StringUtils;
 
 import javax.persistence.*;
 import java.io.Serializable;

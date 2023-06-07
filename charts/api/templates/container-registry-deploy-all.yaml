@@ -1,0 +1,170 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.containerRegistry.name }}
+  labels:
+    app: {{ .Values.containerRegistry.name }}
+spec:
+  replicas: {{ .Values.containerRegistry.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.containerRegistry.name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.containerRegistry.name }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount }}
+      {{- with .Values.containerRegistry.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: container-registry
+          imagePullPolicy: Always
+          image: {{ .Values.containerRegistry.image }}
+          {{- with .Values.containerRegistry.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{ if .Values.containerRegistry.healthCheckPath }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.containerRegistry.healthCheckPath }}
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.containerRegistry.healthCheckPath }}
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          {{- end }}
+          command: [ "java" ]
+          args:
+            - "-XX:+UseContainerSupport"
+            - "-jar"
+            - "-Xms2048m"
+            - "-Xmx2048m"
+            - "-Dspring.profiles.active={{ .Values.containerRegistry.profile }}"
+            - "-Djava.security.egd=file:/dev/./urandom"
+            - "-Duser.timezone=Asia/Seoul"
+            - "-XX:MaxMetaspaceSize=512m"
+            - "-XX:MetaspaceSize=512m"
+            - "registry-api.jar"
+          {{- with .Values.containerRegistry.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            {{- toYaml .Values.containerRegistry.volumeMounts | default "" | nindent 12 }}
+      volumes:
+        {{- toYaml .Values.containerRegistry.volumes | default "" | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.containerRegistry.name }}
+  name: {{ .Values.containerRegistry.name }}-svc
+spec:
+  ports:
+    - name: container-registry
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+      {{ if eq .Values.containerRegistry.service.type "NodePort" }}
+      nodePort: {{ .Values.containerRegistry.service.nodePort }}
+      {{- end }}
+  selector:
+    app: {{ .Values.containerRegistry.name }}
+  type: {{ .Values.containerRegistry.service.type }}
+{{ if .Values.containerRegistry.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.containerRegistry.name }}-ing
+  {{- with .Values.containerRegistry.ingress.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.containerRegistry.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.containerRegistry.ingress.ingressClassName }}
+  {{- end }}
+  rules:
+    {{- range .Values.containerRegistry.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ . }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $.Values.containerRegistry.name }}-svc
+                port:
+                  number: 8080
+          {{- end }}
+    {{- end }}
+  {{ if .Values.containerRegistry.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.containerRegistry.ingress.hosts }}
+        - {{ .host | quote }}
+        {{- end }}
+      secretName: {{ .Values.containerRegistry.ingress.tls.secretName }}
+  {{- end }}
+{{- end }}
+{{ if .Values.containerRegistry.registryIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.containerRegistry.name }}-registry-ing
+  {{- with .Values.containerRegistry.registryIngress.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.containerRegistry.registryIngress.ingressClassName }}
+  ingressClassName: {{ .Values.containerRegistry.registryIngress.ingressClassName }}
+  {{- end }}
+  rules:
+    {{- range .Values.containerRegistry.registryIngress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ . }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $.Values.containerRegistry.name }}-svc
+                port:
+                  number: 8080
+          {{- end }}
+    {{- end }}
+  {{ if .Values.containerRegistry.registryIngress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.containerRegistry.registryIngress.hosts }}
+        - {{ .host | quote }}
+        {{- end }}
+      secretName: {{ .Values.containerRegistry.registryIngress.tls.secretName }}
+  {{- end }}
+{{- end }}

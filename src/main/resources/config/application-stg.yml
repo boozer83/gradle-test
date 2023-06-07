@@ -30,26 +30,6 @@ spring:
       enabled: false
     livereload:
       enabled: false
-  datasource:
-    type: com.zaxxer.hikari.HikariDataSource
-    # TODO: Put JDBC URL
-    url: jdbc:mysql://localhost:3306/sample?useUnicode=true&characterEncoding=utf8&allowPublicKeyRetrieval=true&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=Asia/Seoul&createDatabaseIfNotExist=true
-    username: user # TODO: Put DB Username
-    password: secret # TODO: Put DB Password
-    hikari:
-      poolName: Hikari
-      auto-commit: false
-      data-source-properties:
-        cachePrepStmts: true
-        prepStmtCacheSize: 250
-        prepStmtCacheSqlLimit: 2048
-        useServerPrepStmts: true
-      maximum-pool-size: 200
-  jpa:
-    show-sql: false
-  # Replace by 'prod, faker' to add the faker context and have sample data loaded in production
-  liquibase:
-    contexts: dev
   thymeleaf:
     cache: true
   kafka:
@@ -121,7 +101,7 @@ application:
     enabled: true
     http: http://sec-proxy.k9e.io:3128
     https: http://sec-proxy.k9e.io:3128
-    no-proxy: .cr-registry.svc.cluster.local,.k5dcr.io
+    no-proxy: .svc.cluster.local,.k5dcr.io
   outbound-url: http://sample.d.k5d.io
   temp-path: /app/temp #temp file path
   error-page: https://console.sandbox.kakaoi.io/40x.html
@@ -140,3 +120,5 @@ application:
     region-code: kr-central-1
   cron-job:
     metering: 0 0/5 * * * ?
+  trail:
+    topic: uc-log-trail.json

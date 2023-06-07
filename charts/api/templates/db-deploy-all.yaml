@@ -1,0 +1,618 @@
+{{ if .Values.db.enabled }}
+{{ if ne .Values.db.volume.type "rbd" }}
+  {{- range $index, $e := until (int .Values.db.replicaCount) }}
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: {{ $.Values.db.name }}-pv-{{ $index }}
+  labels:
+    type: local
+    app: {{ $.Values.db.name }}
+spec:
+  storageClassName: {{ $.Values.db.volume.storageClassName }}
+  capacity:
+    storage: {{ $.Values.db.volume.size }}
+  claimRef:
+    namespace: {{ $.Values.namespace }}
+    name: data-{{ $.Values.db.name }}-{{ $index }}
+  accessModes:
+    - ReadWriteOnce
+  {{ $.Values.db.volume.type }}:
+  {{- with $.Values.db.volume.spec }}
+{{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.db.name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.db.name }}
+  serviceName: {{ .Values.db.name }}-svc
+  replicas: {{ .Values.db.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.db.name }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount }}
+      {{- with .Values.db.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: init-mysql
+          image: {{ .Values.db.image }}
+          command:
+            - bash
+            - "-c"
+            - |
+              set -ex
+              # Generate mysql server-id from pod ordinal index.
+              [[ `hostname` =~ -([0-9]+)$ ]] || exit 1
+              ordinal=${BASH_REMATCH[1]}
+              echo [mysqld] > /mnt/conf.d/server-id.cnf
+              # Add an offset to avoid reserved server-id=0 value.
+              echo server-id=$((100 + $ordinal)) >> /mnt/conf.d/server-id.cnf
+              # Copy appropriate conf.d files from config-map to emptyDir.
+              if [[ $ordinal -eq 0 ]]; then
+                cp /mnt/config-map/primary.cnf /mnt/conf.d/
+              else
+                cp /mnt/config-map/replica.cnf /mnt/conf.d/
+              fi
+          volumeMounts:
+            - name: conf
+              mountPath: /mnt/conf.d
+            - name: config-map
+              mountPath: /mnt/config-map
+        - name: clone-mysql
+          image: {{ .Values.db.backupImage }}
+          command:
+            - bash
+            - "-c"
+            - |
+              set -ex
+              # Skip the clone if data already exists.
+              [[ -d /var/lib/mysql/mysql ]] && exit 0
+              # Skip the clone on primary (ordinal index 0).
+              [[ `hostname` =~ -([0-9]+)$ ]] || exit 1
+              ordinal=${BASH_REMATCH[1]}
+              [[ $ordinal -eq 0 ]] && exit 0
+              # Clone data from previous peer.
+              ncat --recv-only {{ .Values.db.name }}-$(($ordinal-1)).{{ .Values.db.name }}-svc 3307 | xbstream -x -C /var/lib/mysql
+              # Prepare the backup.
+              xtrabackup --prepare --target-dir=/var/lib/mysql
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+              subPath: mysql
+            - name: conf
+              mountPath: /etc/mysql/conf.d
+      containers:
+        - name: mysql
+          image: {{ .Values.db.image }}
+          imagePullPolicy: Always
+          {{- with .Values.db.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.db.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: mysql
+              containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+              subPath: mysql
+            - name: conf
+              mountPath: /etc/mysql/conf.d
+            - name: init-data
+              mountPath: /docker-entrypoint-initdb.d
+          livenessProbe:
+            exec:
+              command:
+                - bash
+                - "-c"
+                - |
+                  set -ex
+                  mysqladmin -uroot -p$MYSQL_ROOT_PASSWORD ping &> /dev/null
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              # Check we can execute queries over TCP (skip-networking is off).
+              command:
+                - bash
+                - "-c"
+                - |
+                  set -ex
+                  mysql -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD -e "SELECT 1" &> /dev/null
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 1
+        - name: xtrabackup
+          image: {{ .Values.db.backupImage }}
+          {{- with .Values.db.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: xtrabackup
+              containerPort: 3307
+          command:
+            - bash
+            - "-c"
+            - |
+              set -ex
+              cd /var/lib/mysql
+
+              # Determine binlog position of cloned data, if any.
+              if [[ -f xtrabackup_slave_info && "x$(<xtrabackup_slave_info)" != "x" ]]; then
+                # XtraBackup already generated a partial "CHANGE MASTER TO" query
+                # because we're cloning from an existing replica. (Need to remove the tailing semicolon!)
+                cat xtrabackup_slave_info | sed -E 's/;$//g' > change_master_to.sql.in
+                # Ignore xtrabackup_binlog_info in this case (it's useless).
+                rm -f xtrabackup_slave_info xtrabackup_binlog_info
+              elif [[ -f xtrabackup_binlog_info ]]; then
+                # We're cloning directly from primary. Parse binlog position.
+                [[ `cat xtrabackup_binlog_info` =~ ^(.*?)[[:space:]]+(.*?)$ ]] || exit 1
+                rm -f xtrabackup_binlog_info xtrabackup_slave_info
+                echo "CHANGE MASTER TO MASTER_LOG_FILE='${BASH_REMATCH[1]}',\
+                      MASTER_LOG_POS=${BASH_REMATCH[2]}" > change_master_to.sql.in
+              fi
+
+              # Check if we need to complete a clone by starting replication.
+              if [[ -f change_master_to.sql.in ]]; then
+                echo "Waiting for mysqld to be ready (accepting connections)"
+                until mysql -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD -e "SELECT 1"; do sleep 1; done
+
+                echo "Initializing replication from clone position"
+                mysql -h 127.0.0.1 \
+                      -uroot -p$MYSQL_ROOT_PASSWORD \
+                      -e "$(<change_master_to.sql.in), \
+                              MASTER_HOST='{{ .Values.db.name }}-0.{{ .Values.db.name }}-svc', \
+                              MASTER_USER='root', \
+                              MASTER_PASSWORD='$MYSQL_ROOT_PASSWORD', \
+                              MASTER_CONNECT_RETRY=10; \
+                            START SLAVE;" || exit 1
+                # In case of container restart, attempt this at-most-once.
+                mv change_master_to.sql.in change_master_to.sql.orig
+              fi
+
+              # Start a server to send backups when requested by peers.
+              exec ncat --listen --keep-open --send-only --max-conns=1 3307 -c \
+                "xtrabackup --backup --slave-info --stream=xbstream --host=127.0.0.1 --user=root --password=$MYSQL_ROOT_PASSWORD"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+              subPath: mysql
+            - name: conf
+              mountPath: /etc/mysql/conf.d
+          resources:
+            requests:
+              cpu: 100m
+              memory: 100Mi
+      volumes:
+        - name: conf
+          emptyDir: {}
+        - name: config-map
+          configMap:
+            name: {{ .Values.db.name }}-config
+        - name: init-data
+          configMap:
+            name: {{ .Values.db.name }}-init-data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: {{ .Values.db.volume.storageClassName }}
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.db.volume.size }}
+---
+# Headless service for stable DNS entries of StatefulSet members.
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.db.name }}-svc
+  labels:
+    app: {{ .Values.db.name }}
+spec:
+  ports:
+    - name: mysql
+      port: 3306
+      {{ if eq .Values.db.service.type "NodePort" }}
+      nodePort: {{ .Values.db.service.nodePort }}
+      {{- end }}
+  clusterIP: None
+  selector:
+    app: {{ .Values.db.name }}
+  type: {{ .Values.db.service.type }}
+---
+# Client service for connecting to any MySQL instance for reads.
+# For writes, you must instead connect to the primary: mysql-0.mysql.
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.db.name }}-read
+  labels:
+    app: {{ .Values.db.name }}
+spec:
+  ports:
+    - name: mysql
+      port: 3306
+  selector:
+    app: {{ .Values.db.name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.db.name }}-config
+  labels:
+    app: {{ .Values.db.name }}
+data:
+  primary.cnf: |
+    # Apply this config only on the primary.
+    [client]
+    default-character-set=utf8mb4
+
+    [mysql]
+    default-character-set=utf8mb4
+
+    [mysqld]
+    log-bin
+    collation-server=utf8_unicode_ci
+    init-connect='SET NAMES utf8'
+    character-set-server=utf8
+
+    max_connections=3000
+    innodb_buffer_pool_size=8G
+    join_buffer_size=2M
+    read_buffer_size=2M
+    read_rnd_buffer_size=2M
+    sort_buffer_size=2M
+  replica.cnf: |
+    # Apply this config only on replicas.
+    [client]
+    default-character-set=utf8mb4
+
+    [mysql]
+    default-character-set=utf8mb4
+
+    [mysqld]
+    super-read-only
+    collation-server=utf8_unicode_ci
+    init-connect='SET NAMES utf8'
+    character-set-server=utf8
+
+    max_connections=3000
+    innodb_buffer_pool_size=8G
+    join_buffer_size=2M
+    read_buffer_size=2M
+    read_rnd_buffer_size=2M
+    sort_buffer_size=2M
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.db.name }}-init-data
+data:
+  init.sql: |-
+
+    CREATE TABLE T_CODE
+    (
+      CODE        VARCHAR(100)  NOT NULL COMMENT '공통코드',
+      NAME        VARCHAR(100)  NOT NULL COMMENT '공통코드이름',
+      DESCRIPTION VARCHAR(2000) NULL     COMMENT '공통코드설명',
+      `ORDER`       TINYINT(4)    NULL     DEFAULT 0 COMMENT '순서',
+      PARENT_CODE VARCHAR(100)  NULL     COMMENT '공통코드부모',
+      CREATED_BY  VARCHAR(100)  NULL     COMMENT '생성자ID',
+      CREATED_DT  TIMESTAMP     NULL     COMMENT '생성일시',
+      UPDATED_BY  VARCHAR(100)  NULL     COMMENT '수정자ID',
+      UPDATED_DT  TIMESTAMP     NULL     COMMENT '수정일시',
+      PRIMARY KEY (CODE)
+    ) COMMENT '공통코드';
+
+    CREATE TABLE T_IMAGE
+    (
+      ID            VARCHAR(100) NOT NULL COMMENT '이미지ID',
+      REPOSITORY_ID VARCHAR(100) NOT NULL COMMENT '레포지토리ID',
+      IMAGE_NAME    VARCHAR(100) NOT NULL COMMENT '이미지이름',
+      DESCRIPTION   VARCHAR(255) NULL     COMMENT '이미지설명',
+      LABEL_LIST    VARCHAR(255) NULL     COMMENT '라벨목록',
+      SIZE          BIGINT       NULL     DEFAULT 0 COMMENT '용량',
+      EXPIRED_DT    TIMESTAMP    NULL     COMMENT '만료일시',
+      ADD_TAG_ENABLED_YN  CHAR(1)   NULL     DEFAULT 'Y' COMMENT '태그추가가능여부',
+      CREATED_BY    VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT    TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY    VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT    TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '이미지';
+
+    CREATE TABLE T_NOTIFICATION
+    (
+      ID            VARCHAR(100)  NOT NULL COMMENT '알림ID',
+      REPOSITORY_ID VARCHAR(100)  NOT NULL COMMENT '레포지토리ID',
+      ENABLED_YN    CHAR(1)       NOT NULL DEFAULT 'N' COMMENT '활성화여부',
+      TRIGGER_LIST  VARCHAR(255)  NULL     COMMENT '트리거목록',
+      SEND_TYPE_LIST varchar(255) NULL     COMMENT '전송타입목록',
+      CREATED_BY    VARCHAR(100)  NULL     COMMENT '생성자ID',
+      CREATED_DT    TIMESTAMP     NULL     COMMENT '생성일시',
+      UPDATED_BY    VARCHAR(100)  NULL     COMMENT '수정자ID',
+      UPDATED_DT    TIMESTAMP     NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '알림';
+
+    CREATE TABLE T_NOTIFICATION_RECEIVER_GROUP (
+       ID                  VARCHAR(100)  NOT NULL COMMENT '수신자그룹ID',
+       NOTIFICATION_ID     VARCHAR(100)  NOT NULL COMMENT '알림ID',
+       RECEIVER_GROUP_ID   VARCHAR(100)  NOT NULL COMMENT 'API수신자그룹ID',
+       CREATED_BY          VARCHAR(100)  NULL     COMMENT '생성자ID',
+       CREATED_DT          TIMESTAMP     NULL     COMMENT '생성일시',
+       UPDATED_BY          VARCHAR(100)  NULL     COMMENT '수정자ID',
+       UPDATED_DT          TIMESTAMP     NULL     COMMENT '수정일시',
+       PRIMARY KEY (ID)
+    ) COMMENT '알림수신자그룹';
+
+    CREATE TABLE T_PROJECT
+    (
+      ID                   VARCHAR(100) NOT NULL COMMENT '프로젝트ID',
+      PROJECT_NAME         VARCHAR(100) NOT NULL COMMENT '프로젝트이름',
+      DOMAIN_NAME          VARCHAR(100) NOT NULL COMMENT '도메인이름',
+      DOMAIN_ID            VARCHAR(100) NOT NULL COMMENT '도메인ID',
+      BUCKET_NAME          VARCHAR(50)  NOT NULL COMMENT '버킷이름',
+      DISTRIBUTED_YN       CHAR(1)      NOT NULL DEFAULT 'N' COMMENT '배포여부',
+      DISTRIBUTED_YAML     TEXT         NULL     COMMENT '배포YAML',
+      CREATED_BY           VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT           TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY           VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT           TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '프로젝트';
+
+    CREATE TABLE T_QUOTA
+    (
+      ID                   VARCHAR(100) NOT NULL COMMENT 'QuataID',
+      PROJECT_ID           VARCHAR(100) NOT NULL COMMENT '프로젝트ID',
+      MAX_REPOSITORY_COUNT INT          NULL     DEFAULT 1000 COMMENT '최대레포지토리갯수',
+      MAX_IMAGE_COUNT      INT          NULL     DEFAULT 10000 COMMENT '리포지토리당최대이미지갯수',
+      MAX_TAG_COUNT        INT          NULL     DEFAULT 1000 COMMENT '이미지당최대태그갯수',
+      PRIMARY KEY (ID)
+    ) COMMENT 'quota';
+
+    CREATE TABLE T_REPOSITORY
+    (
+      ID               VARCHAR(100) NOT NULL COMMENT '레포지토리ID',
+      PROJECT_ID       VARCHAR(100) NOT NULL COMMENT '프로젝트ID',
+      REPOSITORY_NAME  VARCHAR(100) NOT NULL COMMENT '레포지토리이름',
+      DESCRIPTION      VARCHAR(255) NULL     COMMENT '레포지토리설명',
+      AUTO_SCAN_YN     CHAR(1)      NOT NULL DEFAULT 'Y' COMMENT '자동스캔여부',
+      TAG_OVERWRITE_YN CHAR(1)      NOT NULL DEFAULT 'Y' COMMENT '태그덮어쓰기여부',
+      USED_SIZE        BIGINT       NULL     COMMENT '저장공간사용량',
+      PUBLIC_YN        CHAR(1)      NOT NULL DEFAULT 'N' COMMENT '공개여부',
+      CREATED_BY       VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT       TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY       VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT       TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '레포지토리';
+
+    CREATE TABLE T_REPOSITORY_USER
+    (
+      ID            VARCHAR(100) NOT NULL COMMENT '추가접근ID',
+      REPOSITORY_ID VARCHAR(100) NOT NULL COMMENT '레포지토리ID',
+      USER_ID       VARCHAR(100) NOT NULL COMMENT '유저ID',
+      ROLE          VARCHAR(30)  NULL     COMMENT '역할',
+      CREATED_BY    VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT    TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY    VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT    TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '레포지토리 유저';
+
+    CREATE TABLE T_RESOURCE_USAGE
+    (
+      ID            VARCHAR(100)  NOT NULL COMMENT '사용ID',
+      PROJECT_ID    VARCHAR(100)  NOT NULL COMMENT '프로젝트ID',
+      REPOSITORY_ID VARCHAR(100)  NOT NULL COMMENT '레포지토리ID',
+      IMAGE_ID      VARCHAR(100)  NULL     COMMENT '이미지ID',
+      LOG           VARCHAR(2000) NULL     COMMENT '로그',
+      TYPE_CODE     VARCHAR(100)  NOT NULL COMMENT '공통코드',
+      CATEGORY      VARCHAR(100)  NOT NULL COMMENT '카테고리',
+      USER_ID       VARCHAR(100)  NOT NULL COMMENT '유저ID',
+      EXTRA         VARCHAR(100)  NULL     COMMENT '추가정보',
+      CREATED_BY    VARCHAR(100)  NULL     COMMENT '생성자ID',
+      CREATED_DT    TIMESTAMP     NULL     COMMENT '생성일시',
+      UPDATED_BY    VARCHAR(100)  NULL     COMMENT '수정자ID',
+      UPDATED_DT    TIMESTAMP     NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '리소스 사용';
+
+    CREATE TABLE T_TAG
+    (
+      ID              VARCHAR(100) NOT NULL COMMENT '태그ID',
+      IMAGE_ID        VARCHAR(100) NOT NULL COMMENT '이미지ID',
+      TAG_NAME        VARCHAR(128) NOT NULL COMMENT '태그이름',
+      DESCRIPTION     VARCHAR(255) NULL     COMMENT '태그설명',
+      DIGEST_MANIFEST VARCHAR(100) NULL     COMMENT '다이제스트매니페스트',
+      SIZE            BIGINT       NULL     DEFAULT 0 COMMENT '용량',
+      STATUS          VARCHAR(100) NULL     COMMENT '상태',
+      CREATED_BY      VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT      TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY      VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT      TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '태그';
+
+    CREATE TABLE T_SCAN_SUMMARY
+    (
+      ID            VARCHAR(100) NOT NULL COMMENT '스캔ID',
+      TAG_ID        VARCHAR(100) NOT NULL COMMENT '태그ID',
+      SCAN_STATUS   VARCHAR(100) NULL     COMMENT '스캔상태',
+      SCAN_DT       TIMESTAMP    NULL     COMMENT '스캔일시',
+      RISK_COUNT    INT          NULL     DEFAULT 0 COMMENT 'Risk갯수',
+      FIXABLE_COUNT INT          NULL     DEFAULT 0 COMMENT 'Fixable갯수',
+      CREATED_BY    VARCHAR(100) NULL     COMMENT '생성자ID',
+      CREATED_DT    TIMESTAMP    NULL     COMMENT '생성일시',
+      UPDATED_BY    VARCHAR(100) NULL     COMMENT '수정자ID',
+      UPDATED_DT    TIMESTAMP    NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '스캔요약';
+
+    CREATE TABLE T_TAG_HISTORY
+    (
+      ID                  VARCHAR(100)  NOT NULL COMMENT '태그히스토리ID',
+      IMAGE_ID            VARCHAR(100)  NOT NULL COMMENT '이미지ID',
+      TAG_NAME            VARCHAR(100)  NOT NULL COMMENT '태그이름',
+      TYPE_CODE           VARCHAR(100)  NOT NULL COMMENT '공통코드',
+      USER_ID             VARCHAR(100)  NOT NULL COMMENT '유저ID',
+      OLD_DIGEST_MANIFEST VARCHAR(100)  NULL     COMMENT '이전다이제스트매니페스트',
+      DIGEST_MANIFEST     VARCHAR(100)  NULL     COMMENT '다이제스트매니페스트',
+      LOG                 VARCHAR(2000) NULL     COMMENT '로그',
+      CREATED_BY          VARCHAR(100)  NULL     COMMENT '생성자ID',
+      CREATED_DT          TIMESTAMP     NULL     COMMENT '생성일시',
+      UPDATED_BY          VARCHAR(100)  NULL     COMMENT '수정자ID',
+      UPDATED_DT          TIMESTAMP     NULL     COMMENT '수정일시',
+      PRIMARY KEY (ID)
+    ) COMMENT '태그 히스토리';
+
+    CREATE TABLE T_SCHEDULE_LOG_TMP (
+        ID VARCHAR(100)  NOT NULL COMMENT '스케줄로그ID',
+    	TAG_COUNT INT NULL COMMENT '태그갯수',
+    	START_DT DATETIME NULL COMMENT '시작시간',
+    	END_DT DATETIME NULL COMMENT '종료시간',
+    	`TYPE` varchar(100) NULL COMMENT '타입',
+        PRIMARY KEY (ID)
+    ) COMMENT='스케줄 로그';
+
+    ALTER TABLE T_TAG
+      ADD CONSTRAINT FK_T_IMAGE_TO_T_TAG
+        FOREIGN KEY (IMAGE_ID)
+        REFERENCES T_IMAGE (ID);
+
+    ALTER TABLE T_REPOSITORY
+      ADD CONSTRAINT FK_T_PROJECT_TO_T_REPOSITORY
+        FOREIGN KEY (PROJECT_ID)
+        REFERENCES T_PROJECT (ID);
+
+    ALTER TABLE T_IMAGE
+      ADD CONSTRAINT FK_T_REPOSITORY_TO_T_IMAGE
+        FOREIGN KEY (REPOSITORY_ID)
+        REFERENCES T_REPOSITORY (ID);
+
+    ALTER TABLE T_REPOSITORY_USER
+      ADD CONSTRAINT FK_T_REPOSITORY_TO_T_REPOSITORY_USER
+        FOREIGN KEY (REPOSITORY_ID)
+        REFERENCES T_REPOSITORY (ID);
+
+    ALTER TABLE T_CODE
+      ADD CONSTRAINT FK_T_CODE_TO_T_CODE
+        FOREIGN KEY (PARENT_CODE)
+        REFERENCES T_CODE (CODE);
+
+    ALTER TABLE T_TAG_HISTORY
+      ADD CONSTRAINT FK_T_CODE_TO_T_TAG_HISTORY
+        FOREIGN KEY (TYPE_CODE)
+        REFERENCES T_CODE (CODE);
+
+    ALTER TABLE T_TAG_HISTORY
+      ADD CONSTRAINT FK_T_IMAGE_TO_T_TAG_HISTORY
+        FOREIGN KEY (IMAGE_ID)
+        REFERENCES T_IMAGE (ID);
+
+    ALTER TABLE T_RESOURCE_USAGE
+      ADD CONSTRAINT FK_T_CODE_TO_T_RESOURCE_USAGE
+        FOREIGN KEY (TYPE_CODE)
+        REFERENCES T_CODE (CODE);
+
+    ALTER TABLE T_NOTIFICATION
+      ADD CONSTRAINT FK_T_REPOSITORY_TO_T_NOTIFICATION
+        FOREIGN KEY (REPOSITORY_ID)
+        REFERENCES T_REPOSITORY (ID);
+
+    ALTER TABLE T_NOTIFICATION_RECEIVER_GROUP
+      ADD CONSTRAINT FK_T_NOTIFICATION_RECEIVER_GROUP_TO_T_NOTIFICATION
+        FOREIGN KEY (NOTIFICATION_ID)
+          REFERENCES T_NOTIFICATION (ID);
+
+    ALTER TABLE T_SCAN_SUMMARY
+      ADD CONSTRAINT FK_T_TAG_TO_T_SCAN_SUMMARY
+        FOREIGN KEY (TAG_ID)
+        REFERENCES T_TAG (ID);
+
+    ALTER TABLE T_QUOTA
+      ADD CONSTRAINT FK_T_PROJECT_TO_T_QUOTA
+        FOREIGN KEY (PROJECT_ID)
+        REFERENCES T_PROJECT (ID);
+
+    CREATE INDEX T_RESOURCE_USAGE_PROJECT_ID_IDX USING BTREE ON registry.T_RESOURCE_USAGE (PROJECT_ID);
+    CREATE INDEX T_RESOURCE_USAGE_REPOSITORY_ID_IDX USING BTREE ON registry.T_RESOURCE_USAGE (REPOSITORY_ID);
+    CREATE INDEX T_RESOURCE_USAGE_IMAGE_ID_IDX USING BTREE ON registry.T_RESOURCE_USAGE (IMAGE_ID);
+
+    CREATE INDEX T_PROJECT_PROJECT_NAME_IDX USING BTREE ON registry.T_PROJECT (PROJECT_NAME);
+    CREATE INDEX T_REPOSITORY_REPOSITORY_NAME_IDX USING BTREE ON registry.T_REPOSITORY (REPOSITORY_NAME);
+    CREATE INDEX T_IMAGE_IMAGE_NAME_IDX USING BTREE ON registry.T_IMAGE (IMAGE_NAME);
+    CREATE INDEX T_TAG_TAG_NAME_IDX USING BTREE ON registry.T_TAG (TAG_NAME);
+
+    insert into registry.T_CODE (CODE, NAME, DESCRIPTION, PARENT_CODE, CREATED_BY, CREATED_DT, UPDATED_BY, UPDATED_DT, `ORDER`)
+    values  ('RESOURCE_USAGE_TYPE', 'RESOURCE_USAGE_TYPE', null, null, 'SYSTEM', now(), 'SYSTEM', now(), 0),
+            ('IMAGE_DELETE', '이미지 삭제', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 6),
+            ('IMAGE_PULL', '이미지 Pull', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 5),
+            ('IMAGE_PUSH', '이미지 Push', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 4),
+            ('IMAGE_UPDATE', '이미지 수정', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 7),
+            ('IMAGE_SCAN', '이미지 스캔', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 8),
+            ('IMAGE_UPDATE_EXPIRES', '이미지 만료기한 변경', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 9),
+            ('REPO_CREATE', '리포지토리 생성', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 0),
+            ('REPO_UPDATE_AUTH', '리포지토리 권한 설정 변경', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 3),
+            ('REPO_UPDATE_OVERWRITE', '리포지토리 태그 덮어쓰기 설정 변경', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 2),
+            ('REPO_UPDATE_SCAN', '리포지토리 이미지 스캔 설정 변경', null, 'RESOURCE_USAGE_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 1),
+            ('TAG_HISTORY_TYPE', 'TAG_HISTORY_TYPE', null, null, 'SYSTEM', now(), 'SYSTEM', now(), 0),
+            ('TAG_ADD', '태그 추가', null, 'TAG_HISTORY_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 0),
+            ('TAG_DELETE', '태그 삭제', null, 'TAG_HISTORY_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 2),
+            ('TAG_MOVE', '태그 이동', null, 'TAG_HISTORY_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 1),
+            ('TAG_RESTORE', '태그 복구', null, 'TAG_HISTORY_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 1);
+
+    INSERT INTO T_CODE (CODE, NAME, DESCRIPTION, PARENT_CODE, CREATED_BY, CREATED_DT, UPDATED_BY, UPDATED_DT, `ORDER`) VALUES
+           ('NOTIFICATION_CHANNEL_TYPE', '알림 채널 타입', '', null, 'SYSTEM', now(), 'SYSTEM', now(), 0),
+           ('KAKAO_WORK', '카카오워크', '', 'NOTIFICATION_CHANNEL_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 1),
+           ('MAIL', '메일', '', 'NOTIFICATION_CHANNEL_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 2),
+           ('KAKAO_WORK_GROUP', '카카오워크 그룹', '', 'NOTIFICATION_CHANNEL_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 4),
+           ('SLACK', '슬랙', '', 'NOTIFICATION_CHANNEL_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 5),
+           ('SMS', 'SMS', '', 'NOTIFICATION_CHANNEL_TYPE', 'SYSTEM', now(), 'SYSTEM', now(), 3);
+
+    CREATE TABLE shedlock(name VARCHAR(64) NOT NULL, lock_until TIMESTAMP(3) NOT NULL,
+                          locked_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), locked_by VARCHAR(255) NOT NULL, PRIMARY KEY (name));
+
+    CREATE TABLE T_PROJECT_LOCK (
+        PROJECT_ID VARCHAR(100) NOT NULL PRIMARY KEY
+    ) COMMENT '프로젝트락';
+
+    CREATE TABLE registry.T_METERING (
+        PROJECT_NAME VARCHAR(100) NOT NULL COMMENT '프로젝트이름',
+        `TYPE` varchar(100) NOT NULL COMMENT '타입',
+    	IMAGE_PATH VARCHAR(500) NULL COMMENT '이미지 경로',
+    	VALUE BIGINT NOT NULL COMMENT '미터링 값',
+        REMOTE_ADDRESS VARCHAR(100) NULL COMMENT 'IP',
+        CREATED_BY VARCHAR(100) NULL COMMENT '생성자ID',
+    	CREATED_DT DATETIME NOT NULL COMMENT '생성일시'
+    ) COMMENT='미터링';
+    CREATE INDEX T_METERING_PROJECT_NAME_IDX USING BTREE ON registry.T_METERING (PROJECT_NAME);
+    CREATE INDEX T_METERING_TYPE_IDX USING BTREE ON registry.T_METERING (`TYPE`);
+
+{{- end }}

@@ -1,0 +1,51 @@
+{{- range .Values.defaultErrorIngresses }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: {{ $.Values.namespace }}
+  name: default-error-{{ .ingressClassName }}-ing
+  annotations:
+#    {{- if .className }}
+#    kubernetes.io/ingress.class: {{ .className }}
+#    {{- end }}
+    nginx.ingress.kubernetes.io/server-snippet: |
+      error_page 400 403 404 500 501 502 503 504 505 /custom_error.html;
+      error_page 405 /custom_405.html;
+      location /custom_error.html {
+        internal;
+        default_type application/json;
+        return 200 '{"errors":[{"code":"UNKNOWN","message":"request error","detail":{}}]}';
+      }
+
+      location /custom_405.html {
+        internal;
+        default_type application/json;
+        return 405 '{"errors":[{"code":"UNSUPPORTED","message":"The operation is unsupported.","detail":{}}]}';
+      }
+
+      if ( $host = '_' ) {
+        return 200 '{"errors":[{"code":"UNKNOWN","message":"request error","detail":{}}]}';
+      }
+spec:
+  {{- if .ingressClassName }}
+  ingressClassName: {{ .ingressClassName }}
+  {{- end }}
+  rules:
+    - host:
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: default-error-svc
+                port:
+                  number: 8080
+  {{ if .tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .tls.host }}
+      secretName: {{ .tls.secretName }}
+  {{- end }}
+{{- end }}

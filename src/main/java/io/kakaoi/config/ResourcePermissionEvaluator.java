@@ -1,11 +1,10 @@
 package io.kakaoi.config;
 
-import io.kakaoi.service.ResourcePermissionService;
-import io.kakaoi.service.dto.IAMDTO;
-import io.kakaoi.util.SecurityUtils;
+import io.kakaoi.service.iam.security.CloudIamAuthenticationToken;
+import io.kakaoi.service.iam.value.IamIdName;
+import io.kakaoi.service.iam.value.IamUserInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.PermissionEvaluator;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -22,9 +21,6 @@ public class ResourcePermissionEvaluator implements PermissionEvaluator {
 
     private static final Logger log = LoggerFactory.getLogger(ResourcePermissionEvaluator.class);
 
-    @Autowired
-    private ResourcePermissionService resourcePermissionService;
-
     /**
      * hasPermission 메소드 사용 시 접근 권한 판단.
      * 예를 들어, 컨트롤러 전역에서 @PreAuthorize("hasPermission(null, 'cr_admin')") 형태로 사용
@@ -39,8 +35,6 @@ public class ResourcePermissionEvaluator implements PermissionEvaluator {
         if (StringUtils.isEmpty(permission)) {
             return false;
         }
-
-        // TODO: Impl Role Check.
 
         return authentication.getAuthorities().contains(new SimpleGrantedAuthority(permission.toString()));
     }
@@ -65,20 +59,17 @@ public class ResourcePermissionEvaluator implements PermissionEvaluator {
             return false;
         }
 
-        // TODO: Impl Role Check.
-        if ("sampleId".equals(targetType)) {
-            String projectId = this.extractProjectId(authentication);
-            return resourcePermissionService.isAccessSample(targetId.toString(), projectId);
-        }
-
         return false;
     }
 
     private String extractProjectId(Authentication authentication) {
-        if (authentication instanceof CloudIAMAuthToken) {
-            CloudIAMAuthToken token = (CloudIAMAuthToken) authentication;
-            IAMDTO.Info info = (IAMDTO.Info) token.getDetails();
-            return info.getProject().getId();
+        if (authentication instanceof CloudIamAuthenticationToken) {
+            CloudIamAuthenticationToken token = (CloudIamAuthenticationToken) authentication;
+            IamUserInfo iamUserInfo = token.getIamUserInfo();
+
+            return iamUserInfo.extractProject()
+                .map(IamIdName::getId)
+                .orElse("");
         }
         return "";
     }

@@ -1,0 +1,7 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+fluentd:
+  image: cloudpipeline.kr-central-1.kcr.dev/test/cr-fluentd:v1.15-debian-mongo-1
+  scrapNamespace: cr-registry

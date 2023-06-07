@@ -6,22 +6,11 @@ WORKDIR /app
 ADD . /app/
 
 # server mvn install
-RUN gradle clean bootJar --exclude-task asciidoctor --exclude-task test
+RUN gradle -Dhttp.proxyHost=sec-proxy.k9e.io -Dhttp.proxyPort=3128 -Dhttps.proxyHost=sec-proxy.k9e.io -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts=localhost,127.0.0.1,127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.k9e.io,.kakaoi.com,.kakaoicdn.net,.k9etool.io,.k5d.io,.kakaoenterprise.com,.kakaoicloud.com,.kakaoi.io,.kakaoi.ai,.kakaoicloud.in,github.kakaoenterprise.in,mdock.daumkakao.io,idock.daumkakao.io clean bootJar --exclude-task asciidoctor --exclude-task test
 
 ###
 
-FROM mdock.daumkakao.io/library/eclipse-temurin:8-jre-focal AS app
-
-# example: os update / install skopeo, kubectl / remove apt update cache
-#RUN sed -i -re "s/([a-z]{2}.)?archive.ubuntu.com|security.ubuntu.com/mirror.kakao.com/g" /etc/apt/sources.list; \
-#    apt-get update && apt-get install --no-install-recommends -y apt-transport-https ca-certificates curl gnupg; \
-#    curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg; \
-#    curl -fsSL https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/xUbuntu_20.04/Release.key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/devel_kubic_libcontainers_stable.gpg > /dev/null; \
-#    echo 'deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_20.04/ /' | tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list > /dev/null; \
-#    echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list > /dev/null; \
-#    apt-get update && apt-get upgrade --no-install-recommends -y &&  \
-#    apt-get install --no-install-recommends -y kubectl skopeo; \
-#    rm -rf /var/lib/apt/lists/*
+FROM --platform=linux/amd64 mdock.daumkakao.io/library/eclipse-temurin:8-jre-focal AS app
 
 WORKDIR /app
 COPY --from=build /app/build/libs/server.jar .

@@ -1,0 +1,6 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+fluentd:
+  image: cr.undercloud.io/devii/libs/cr-fluentd:v1.15-debian-mongo-1

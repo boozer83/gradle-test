@@ -1,0 +1,176 @@
+## Using default values from https://github.com/grafana/helm-charts/blob/main/charts/grafana/values.yaml
+##
+grafana:
+  adminPassword: password1234
+
+  ingress:
+    enabled: true
+    hosts: ["grafana.container-registry.kr-central-2.kakaoi.in"]
+    ingressClassName: "nginx"
+    tls:
+      - hosts:
+          - grafana.container-registry.kr-central-2.kakaoi.in
+        secretName: kr-central-2-kakaoi-in
+
+  serviceMonitor:
+    enabled: false
+
+  persistence:
+    enabled: true
+    storageClassName: general
+
+  ## grafana/grafana:9.3.0
+  image:
+    repository: registry.undercloud.io/devii/libs/grafana
+    tag: 9.3.0
+
+  ## quay.io/kiwigrid/k8s-sidecar:1.19.2
+  sidecar:
+    image:
+      repository: registry.undercloud.io/devii/libs/k8s-sidecar
+      tag: 1.19.2
+
+  ## busybox:1.31.1
+  initChownData:
+    image:
+      repository: registry.undercloud.io/devii/libs/busybox
+      tag: "1.31.1"
+
+## Component scraping the kube api server
+##
+kubeApiServer:
+  enabled: false
+
+## Component scraping the kubelet and kubelet-hosted cAdvisor
+##
+kubelet:
+  enabled: true
+
+## Component scraping the kube controller manager
+##
+kubeControllerManager:
+  enabled: false
+
+## Component scraping coreDns. Use either this or kubeDns
+##
+coreDns:
+  enabled: false
+
+## Component scraping kubeDns. Use either this or coreDns
+##
+kubeDns:
+  enabled: false
+
+## Component scraping etcd
+##
+kubeEtcd:
+  enabled: false
+
+## Component scraping kube scheduler
+##
+kubeScheduler:
+  enabled: false
+
+  serviceMonitor:
+    enabled: false
+
+## Component scraping kube proxy
+##
+kubeProxy:
+  enabled: false
+
+## Configuration for kube-state-metrics subchart
+##
+kube-state-metrics:
+
+  ## registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.7.0
+  image:
+    repository: registry.undercloud.io/devii/libs/kube-state-metrics
+    tag: v2.7.0
+
+  prometheus:
+    monitor:
+      enabled: true
+
+  selfMonitor:
+    enabled: false
+
+prometheus-node-exporter:
+
+  ## quay.io/prometheus/node-exporter:v1.5.0
+  image:
+    repository: registry.undercloud.io/devii/libs/node-exporter:v1.5.0
+    tag: v1.5.0
+
+alertmanager:
+  alertmanagerSpec:
+
+    ## quay.io/prometheus/alertmanager:v0.24.0
+    image:
+      registry: registry.undercloud.io
+      repository: devii/libs/alertmanager
+      tag: v0.24.0
+
+## Manages Prometheus and Alertmanager components
+##
+prometheusOperator:
+  enabled: true
+
+  kubeletService:
+    enabled: true
+
+  ## quay.io/prometheus-operator/prometheus-operator:v0.60.1
+  image:
+    registry: registry.undercloud.io
+    repository: devii/libs/prometheus-operator
+    tag: v0.60.1
+
+  ## quay.io/prometheus-operator/prometheus-config-reloader:v0.60.1
+  prometheusConfigReloader:
+    image:
+      registry: registry.undercloud.io
+      repository: devii/libs/prometheus-config-reloader
+      tag: v0.60.1
+
+  ## k8s.gcr.io/ingress-nginx/kube-webhook-certgen:v1.3.0
+  admissionWebhooks:
+    patch:
+      image:
+        registry: registry.undercloud.io
+        repository: devii/libs/kube-webhook-certgen
+        tag: v1.3.0
+
+## Deploy a Prometheus instance
+##
+prometheus:
+
+  enabled: true
+
+  ingress:
+    enabled: true
+    hosts: ["prometheus.container-registry.kr-central-2.kakaoi.in"]
+    ingressClassName: "nginx"
+    tls:
+      - hosts:
+          - prometheus.container-registry.kr-central-2.kakaoi.in
+        secretName: kr-central-2-kakaoi-in
+
+  serviceMonitor:
+    selfMonitor: false
+
+  prometheusSpec:
+
+    ## quay.io/prometheus/prometheus:v2.39.1
+    image:
+      registry: registry.undercloud.io
+      repository: devii/libs/prometheus
+      tag: v2.39.1
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: general
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi

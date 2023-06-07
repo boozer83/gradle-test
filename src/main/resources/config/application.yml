@@ -61,7 +61,7 @@ management:
 
 spring:
   application:
-    name: sample-app # TODO: Put App Name
+    name: dop-uclog-proxy-app
   profiles:
     # The commented value for `active` can be replaced with valid Spring profiles to load.
     # Otherwise, it will be filled in by maven when building the JAR file
@@ -73,27 +73,6 @@ spring:
     jpa:
       repositories:
         bootstrap-mode: deferred
-  jpa:
-    open-in-view: false
-    properties:
-      hibernate.jdbc.time_zone: UTC
-      hibernate.id.new_generator_mappings: true
-      hibernate.connection.provider_disables_autocommit: true
-      hibernate.cache.use_second_level_cache: false
-      hibernate.cache.use_query_cache: false
-      hibernate.generate_statistics: false
-      # modify batch size as necessary
-      hibernate.jdbc.batch_size: 25
-      hibernate.order_inserts: true
-      hibernate.order_updates: true
-      hibernate.query.fail_on_pagination_over_collection_fetch: true
-      hibernate.query.in_clause_parameter_padding: true
-    hibernate:
-      ddl-auto: none
-      naming:
-        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-        implicit-strategy: org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy
-    database-platform: org.hibernate.dialect.MySQLDialect
   messages:
     basename: i18n/messages
     encoding: UTF-8
@@ -132,6 +111,9 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        request.timeout.ms: 20000
+        delivery.timeout.ms: 30000
 
 server:
   servlet:
@@ -152,7 +134,7 @@ info:
 
 jhipster:
   clientApp:
-    name: 'SampleApp' # TODO: ClientApp Name 바꾸기
+    name: 'DopUclogProxyApp'
 
 # ===================================================================
 # Application specific properties

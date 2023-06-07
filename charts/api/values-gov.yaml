@@ -1,0 +1,142 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: cr-service
+createNamespaces:
+  - cr-registry
+
+defaultErrorIngresses:
+  - ingressClassName: nginx
+    tls:
+      enabled: true
+      host: container-registry.kr-gov-central-1.kakaoicloud-kr-gov-in.com
+      secretName: kr-gov-central-1-kakaoicloud-kr-gov-in-com
+  - ingressClassName: registry
+    tls:
+      enabled: false
+      secretName:
+
+containerRegistry:
+  profile: gov
+  image: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-api:v3.0.4
+  replicaCount: 5
+  volumeMounts:
+    - mountPath: /secret/uclog
+      name: uclog-secret
+      readOnly: true
+    - mountPath: /secret/registry
+      name: registry-secret
+      readOnly: true
+  volumes:
+    - name: uclog-secret
+      secret:
+        defaultMode: 420
+        secretName: uclog-secret
+    - name: registry-secret
+      secret:
+        defaultMode: 420
+        secretName: registry-secret
+  service:
+    type: ClusterIP
+    nodePort:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 400 404 405 /40x.html;
+        location /40x.html{
+          proxy_pass https://console.kakaoicloud-kr-gov.com;
+        }
+        error_page 500 505 /50x.html;
+        location /50x.html{
+          proxy_pass https://console.kakaoicloud-kr-gov.com;
+        }
+    hosts:
+      - host: container-registry.kr-gov-central-1.kakaoicloud-kr-gov-in.com
+        paths:
+          - /
+    className: nginx
+    tls:
+      enabled: true
+      secretName: kr-gov-central-1-kakaoicloud-kr-gov-in-com
+  registryIngress:
+    enabled: true
+    hosts:
+      - host: kic-cr-service.kr-gov-central-1.kcr.dev
+        paths:
+          - /
+    ingressClassName: registry
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 405 /405.html;
+        location /405.html {
+          return 405 '{"errors":[{"code":"UNSUPPORTED","message":"The operation is unsupported.","detail":{}}]}';
+        }
+
+        if ($request_method !~ ^(GET|POST|PUT|PATCH|HEAD)$) {
+          return 405 '{"errors":[{"code":"UNSUPPORTED","message":"The operation is unsupported.","detail":{}}]}';
+        }
+
+admin:
+  profile: gov
+  image: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-admin-api:v1.0.0
+  replicaCount: 3
+  service:
+    type: ClusterIP
+    nodePort:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 400 404 405 /40x.html;
+        location /40x.html{
+          proxy_pass https://console.kakaoicloud-kr-gov.com;
+        }
+        error_page 500 505 /50x.html;
+        location /50x.html{
+          proxy_pass https://console.kakaoicloud-kr-gov.com;
+        }
+    hosts:
+      - host: container-registry-admin.kr-gov-central-1.kakaoicloud-kr-gov-in.com
+        paths:
+          - /
+    className: nginx
+    tls:
+      enabled: true
+      secretName: kr-gov-central-1-kakaoicloud-kr-gov-in-com
+
+db:
+  replicaCount: 3
+  image: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-mysql:5.7
+  backupImage: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-xtrabackup:1.0
+  env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: password20220114
+    - name: MYSQL_USER
+      value: registry
+    - name: MYSQL_PASSWORD
+      value: registry20210728!@#
+    - name: MYSQL_DATABASE
+      value: registry
+  volume:
+    type: rbd
+    size: 30Gi
+    storageClassName: general
+  service:
+    type: ClusterIP
+    nodePort:
+
+secrets:
+  - name: uclog-secret
+    type: Opaque
+    data:
+      keystore.jks: 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
+      truststore.jks: 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
+  - name: registry-secret
+    type: Opaque
+    data:
+      server.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURURENDQWpRQ0NRQ3d5TnpBbTdEWUl6QU5CZ2txaGtpRzl3MEJBUXNGQURCbk1Rc3dDUVlEVlFRR0V3SkwKVWpFWU1CWUdBMVVFQ2d3UGEyRnJZVzlsYm5SbGNuQnlhWE5sTVI4d0hRWURWUVFMREJaTGFVTWdRMjl1ZEdGcApibVZ5SUZKbFoybHpkSEo1TVIwd0d3WURWUVFEREJScmNpMWpaVzUwY21Gc0xURXVhMk55TG1SbGRqQWdGdzB5Ck16QTFNalV3TWpFeU1qQmFHQTh5TURVek1EVXhOekF5TVRJeU1Gb3daekVMTUFrR0ExVUVCaE1DUzFJeEdEQVcKQmdOVkJBb01EMnRoYTJGdlpXNTBaWEp3Y21selpURWZNQjBHQTFVRUN3d1dTMmxESUVOdmJuUmhhVzVsY2lCUwpaV2RwYzNSeWVURWRNQnNHQTFVRUF3d1VhM0l0WTJWdWRISmhiQzB4TG10amNpNWtaWFl3Z2dFaU1BMEdDU3FHClNJYjNEUUVCQVFVQUE0SUJEd0F3Z2dFS0FvSUJBUURSdThlM1lucGdEdjNOWFd0MjVPOXR5YmluQ1NLa05hM2YKbnVJVHdQdHZITWhBQnJKZUQ2dmI5S0RjQWlaM0dhNW1BMGluRmZtSklHMGRsL0VMV0dDcmkxbzV5b0h4SU9KRgpvTlM4bDFRcSt4YjVPUngvRTZpZmxPaGovQmFuQnUvTEg1clBNNGZjbjNkdWdoT0dXd1BXaWpRZHlJMmJhVFhBCloxV3FyeVExaUhlYnI4SmF6M1pGR0txSXB4cW5YYkdHMDZ2NmpDU0ZJcEdXNTdLQjZGV3FEVkMxWllHNmZMcisKUXFUSGdxL0N2a0VGYWVaa0hUdFNVM0ZlaGVHMnZYc2h4OHpBeWROQ1NPSzdIS1RVTm9rUTBzUk1FaXcyYkw4dwpRVXF5ekJOUHBBYUtBaHQ2ZnE0WFVBY0ZKbGl4N1ZMRW5tdTgwWmxyV2tZL3dzcUFpNmZCQWdNQkFBRXdEUVlKCktvWklodmNOQVFFTEJRQURnZ0VCQUs2UmFIN25yWlJaNURlVkx3QUtNRnBORklmY2hlaytTOXhPUnVaV1g2NFoKQ3M0a1hZK2xESkJqb1JmZElzWUN0cytteGpXK281bE1MT0pIejF0VFJkTGNwNVNnbi9RdW5CU1hFN3k2emhVZgo3Rm1EcHEycWZHMXorWVptUzVWbk5CKzRvaGRERHV4TmRwWERqSVVIVUc4Tno5UEUyUDUyL3M0bHllSk5JQUJhClpLT0pPMVNhdHJIVEUxTWpEZnBWSUZaYkFtTGQ0Z1VEQUFGWkJnWit4d2x3RTVvMlArcDRuZmR1MitvQzBucjAKMmxXTHI1NVkrbnZIYUl6bDYrMS9sTkJNTko2NWI5UmJmRGlXT1UxcTVEMmR3S3NlUDZaM3RzZFZIZUZBMTdDLwpvMzB5bHFEWms4cld3U1NhWXhhckxRYWdoQkp0UWYxanBmM1hTellua1A0PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCi0tLS0tQkVHSU4gQ0VSVElGSUNBVEUtLS0tLQpNSUlET1RDQ0FpRUNGQjdqR0hMV2x3b3NjOVRMMzRkRUhaK1ZTckgrTUEwR0NTcUdTSWIzRFFFQkN3VUFNRmt4CkN6QUpCZ05WQkFZVEFrdFNNUTR3REFZRFZRUUlEQVZUWlc5MWJERWhNQjhHQTFVRUNnd1lTVzUwWlhKdVpYUWcKVjJsa1oybDBjeUJRZEhrZ1RIUmtNUmN3RlFZRFZRUUREQTRxTG5KbFoybHpkSEo1TG1OdmJUQWVGdzB5TVRBNQpNREV3TnpFME16UmFGdzB5TXpBNU1ERXdOekUwTXpSYU1Ga3hDekFKQmdOVkJBWVRBa3RTTVE0d0RBWURWUVFJCkRBVlRaVzkxYkRFaE1COEdBMVVFQ2d3WVNXNTBaWEp1WlhRZ1YybGtaMmwwY3lCUWRIa2dUSFJrTVJjd0ZRWUQKVlFRRERBNHFMbkpsWjJsemRISjVMbU52YlRDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQwpnZ0VCQUxKa1JFOEtySm9IMFR0Sjd4SHo1aW00bHJLelpXaG5RcVFpdDZNOE93dUhJZ0JNM2ZlV0xjaTZGYjV5CnVQWnQxOUZQS3JEQWNmSUcwM0VtN2hNb2lGVzdreVJNWW1nMERtSFJRV0xBczU2dXFrZkEwY0Y2LzgwN2t5THYKZmZQSEtnYWxPRENZUHcrdWx0azJvdjRyd3p3aFA2eEV5ajlkcGRNL0VxeVdNUlNYNCszL2tpNER0VE9oL3pQWQp3VkpxSDdTMFB0K2M4TTdURUZWdm5XYjZnSFNjQ0RaamdHQ3cyKzRlcmFTOHhVWXFsSEppKzZrVmNoeHJoS1k0CjVKR3lzMHVJbDZ5enRuS2NqdjUrZjdxRGtjcENZUWpQYjQ3MXREMnZZVWU5VUljNnRlTUtjMjJGMHhsZU5iSkwKa1ZLRkxqek0xV09LMk1CSVZKazBweHNKNVM4Q0F3RUFBVEFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBVXJ4NwpPeVBmSjFVemVkRmthUkpnaU5SU3Rjbmd4amoxRm0wZW43V2N0S0hyOWgrV2ZvS3pvanl4WkVyT21tMTZEcUhiCldleXpJclZaUGYxKzloaXFLV0FhY1ZzbDBUd3p6VlVydnpNdVAyQlNBM2VtaWZJRjR4eHhvT29yRjkzdmo3RTMKbGh2Q0ppRUlsZzlkRXVRWG0zMFVzUWN1V2RrK2dnQ2gxaEN5aFI0QkJCWC93MlNwaVY2RmgrK29scVlUbWFHRAo4RlJSTEJkOU03WVpiWnBTa096QXJJcUtBTTJGdmRYMG5vNlBvWmhxL0VYM0FUc2hyTERpakJ6d1RFSmNzbjNJClhRa3lZbEwrbndqcnhHbHhWelRYOTY3U3d1OGJQSHI0VFJFeWl6SWo1V0xFMEdEZ0VXdnFUb21kYXFWOXBpdkYKNXBQdVhZZmFTQXBKa0tQendRPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQoK
+      registry.jks: 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

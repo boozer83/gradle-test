@@ -1,0 +1,176 @@
+## Using default values from https://github.com/grafana/helm-charts/blob/main/charts/grafana/values.yaml
+##
+grafana:
+  adminPassword: password1234
+
+  ingress:
+    enabled: true
+    hosts: ["grafana.kr-gov-central-1.kakaoicloud-kr-gov-in.com"]
+    ingressClassName: "nginx"
+    tls:
+      - hosts:
+          - grafana.kr-gov-central-1.kakaoicloud-kr-gov-in.com
+        secretName: kr-gov-central-1-kakaoicloud-kr-gov-in-com
+
+  serviceMonitor:
+    enabled: false
+
+  persistence:
+    enabled: true
+    storageClassName: general
+
+  ## grafana/grafana:9.3.0
+  image:
+    repository: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-grafana
+    tag: 9.3.0
+
+  ## quay.io/kiwigrid/k8s-sidecar:1.19.2
+  sidecar:
+    image:
+      repository: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-k8s-sidecar
+      tag: 1.19.2
+
+  ## busybox:1.31.1
+  initChownData:
+    image:
+      repository: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-busybox
+      tag: "1.31.1"
+
+## Component scraping the kube api server
+##
+kubeApiServer:
+  enabled: false
+
+## Component scraping the kubelet and kubelet-hosted cAdvisor
+##
+kubelet:
+  enabled: true
+
+## Component scraping the kube controller manager
+##
+kubeControllerManager:
+  enabled: false
+
+## Component scraping coreDns. Use either this or kubeDns
+##
+coreDns:
+  enabled: false
+
+## Component scraping kubeDns. Use either this or coreDns
+##
+kubeDns:
+  enabled: false
+
+## Component scraping etcd
+##
+kubeEtcd:
+  enabled: false
+
+## Component scraping kube scheduler
+##
+kubeScheduler:
+  enabled: false
+
+  serviceMonitor:
+    enabled: false
+
+## Component scraping kube proxy
+##
+kubeProxy:
+  enabled: false
+
+## Configuration for kube-state-metrics subchart
+##
+kube-state-metrics:
+
+  ## registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.7.0
+  image:
+    repository: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-kube-state-metrics
+    tag: v2.7.0
+
+  prometheus:
+    monitor:
+      enabled: true
+
+  selfMonitor:
+    enabled: false
+
+prometheus-node-exporter:
+
+  ## quay.io/prometheus/node-exporter:v1.5.0
+  image:
+    repository: gitlab-registry.gov.kakaoicloud.com/csap-cloud/kic-services/kic-cr-node-exporter
+    tag: v1.5.0
+
+alertmanager:
+  alertmanagerSpec:
+
+    ## quay.io/prometheus/alertmanager:v0.24.0
+    image:
+      registry: gitlab-registry.gov.kakaoicloud.com
+      repository: csap-cloud/kic-services/kic-cr-alertmanager
+      tag: v0.24.0
+
+## Manages Prometheus and Alertmanager components
+##
+prometheusOperator:
+  enabled: true
+
+  kubeletService:
+    enabled: true
+
+  ## quay.io/prometheus-operator/prometheus-operator:v0.60.1
+  image:
+    registry: gitlab-registry.gov.kakaoicloud.com
+    repository: csap-cloud/kic-services/kic-cr-prometheus-operator
+    tag: v0.60.1
+
+  ## quay.io/prometheus-operator/prometheus-config-reloader:v0.60.1
+  prometheusConfigReloader:
+    image:
+      registry: gitlab-registry.gov.kakaoicloud.com
+      repository: csap-cloud/kic-services/kic-cr-prometheus-config-reloader
+      tag: v0.60.1
+
+  ## k8s.gcr.io/ingress-nginx/kube-webhook-certgen:v1.3.0
+  admissionWebhooks:
+    patch:
+      image:
+        registry: gitlab-registry.gov.kakaoicloud.com
+        repository: csap-cloud/kic-services/kic-cr-kube-webhook-certgen
+        tag: v1.3.0
+
+## Deploy a Prometheus instance
+##
+prometheus:
+
+  enabled: true
+
+  ingress:
+    enabled: true
+    hosts: ["prometheus.kr-gov-central-1.kakaoicloud-kr-gov-in.com"]
+    ingressClassName: "nginx"
+    tls:
+      - hosts:
+          - prometheus.kr-gov-central-1.kakaoicloud-kr-gov-in.com
+        secretName: kr-gov-central-1-kakaoicloud-kr-gov-in-com
+
+  serviceMonitor:
+    selfMonitor: false
+
+  prometheusSpec:
+
+    ## quay.io/prometheus/prometheus:v2.39.1
+    image:
+      registry: gitlab-registry.gov.kakaoicloud.com
+      repository: csap-cloud/kic-services/kic-cr-prometheus
+      tag: v2.39.1
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: general
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi

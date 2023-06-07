@@ -1,0 +1,229 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    k8s-app: {{ .Release.Name }}-fluentd
+  name: {{ .Release.Name }}-fluentd
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-fluentd
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "namespaces"
+      - "pods"
+    verbs:
+      - "list"
+      - "get"
+      - "watch"
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .Release.Name }}-fluentd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-fluentd
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-fluentd
+    namespace: {{ .Release.Namespace }}
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-fluentd
+  labels:
+    k8s-app: {{ .Release.Name }}-fluentd-logging
+    version: v1
+    kubernetes.io/cluster-service: "true"
+spec:
+  selector:
+    matchLabels:
+      k8s-app: {{ .Release.Name }}-fluentd-logging
+  template:
+    metadata:
+      labels:
+        k8s-app: {{ .Release.Name }}-fluentd-logging
+        version: v1
+        kubernetes.io/cluster-service: "true"
+    spec:
+      serviceAccount: {{ .Release.Name }}-fluentd
+      serviceAccountName: {{ .Release.Name }}-fluentd
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      containers:
+        - name: fluentd
+          image: {{ .Values.fluentd.image }}
+          imagePullPolicy: Always
+          {{- with .Values.fluentd.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            limits:
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: config-volume
+              mountPath: /fluentd/etc/fluent.conf
+              subPath: fluent.conf
+            {{- with .Values.fluentd.volumeMounts }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: config-volume
+          configMap:
+            name: {{ .Release.Name }}-fluentd-conf
+        {{- with .Values.fluentd.volumes }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ .Release.Name }}-fluentd-conf
+  labels:
+    k8s-app: {{ .Release.Name }}-fluentd-conf
+data:
+  fluent.conf: |-
+    <source>
+      @type tail
+      path /var/log/containers/*_{{ .Values.fluentd.scrapNamespace }}_*.log
+      pos_file /var/log/fluentd-containers.log.pos
+      tag "#{ENV['FLUENT_CONTAINER_TAIL_TAG'] || 'kubernetes.*'}"
+      exclude_path "#{ENV['FLUENT_CONTAINER_TAIL_EXCLUDE_PATH'] || use_default}"
+      read_from_head true
+      {{ if eq .Values.fluentd.logType "containerd" }}
+      <parse>
+        @type regexp
+        expression ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+      </parse>
+      {{- end }}
+      {{ if eq .Values.fluentd.logType "docker" }}
+      <parse>
+        @type json
+        time_key time
+        time_format "#{ENV['FLUENT_CONTAINER_TAIL_PARSER_TIME_FORMAT'] || '%Y-%m-%dT%H:%M:%S.%NZ'}"
+      </parse>
+      {{- end }}
+    </source>
+
+    <filter kubernetes.**>
+      @type parser
+      key_name log
+      <parse>
+        @type json
+        time_key time
+        keep_time_key true
+        time_format "#{ENV['FLUENT_CONTAINER_TAIL_PARSER_TIME_FORMAT'] || '%Y-%m-%dT%H:%M:%S.%NZ'}"
+      </parse>
+    </filter>
+
+    <filter kubernetes.**>
+      @type grep
+      <exclude>
+        key auth.user.name
+        pattern /INTERNAL_USE/
+      </exclude>
+    </filter>
+
+    <filter kubernetes.**>
+      @type grep
+      <exclude>
+        key auth.user.name
+        pattern /ADD_TAG_IGNORE/
+      </exclude>
+    </filter>
+    
+    <filter kubernetes.**>
+      @type grep
+      <exclude>
+        key auth.user.name
+        pattern /"internalAction"/
+      </exclude>
+    </filter>
+
+    <filter kubernetes.**>
+      @type grep
+      <regexp>
+        key kic.label
+        pattern /outbound/
+      </regexp>
+    </filter>
+
+    <filter kubernetes.**>
+      @type grep
+      <regexp>
+        key http.request.method
+        pattern /GET/
+      </regexp>
+    </filter>
+
+    <filter kubernetes.**>
+      @type record_transformer
+      <record>
+        project_name ${record["kic.projectname"]}
+        type "PULL_SIZE"
+        image_path ${record["vars.name"]}
+        value ${record["http.response.written"]}
+        remote_address ${record["http.request.remoteaddr"]}
+        created_by ${record["auth.user.name"]}
+        created_dt ${record["time"]}
+      </record>
+      remove_keys [ "kic.projectname", "vars.name", "http.response.written", "http.request.remoteaddr", "auth.user.name", "time", "go.version", "http.request.host", "http.request.id", "http.request.method", "http.request.uri", "http.request.useragent", "kic.label", "level", "msg", "vars.digest" ]
+    </filter>
+
+    <match kubernetes.**>
+      @type {{ .Values.db.type }}
+      
+      {{ if eq .Values.db.type "mongo_replset" }}
+      replica_set {{ .Values.db.replicaSet }}
+      auth_source {{ .Values.db.authSource }}
+      nodes {{ .Values.db.nodes }}
+      {{ else }}
+      host {{ .Values.db.host }}
+      port {{ .Values.db.port }}
+      {{- end }}
+    
+      database {{ .Values.db.database }}
+      user {{ .Values.db.username }}
+      password {{ .Values.db.password }}
+      collection metering
+  
+      {{ if .Values.db.ssl.enabled }}
+      ssl true
+      ssl_ca_cert {{ .Values.db.ssl.caPath }}
+      {{- end }}
+
+      <inject>
+        # key name of timestamp
+        time_key created_dt
+      </inject>
+
+      <buffer>
+        # flush
+        flush_interval 10s
+      </buffer>
+    </match>

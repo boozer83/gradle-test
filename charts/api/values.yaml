@@ -1,0 +1,100 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: default
+serviceAccount: cr-service-sa
+createNamespaces: []
+
+# 보안 검수 대응 ingress
+#  - className:
+#      tls:
+#        enabled: false
+#        host:
+#        secretName:
+defaultErrorIngresses: []
+
+containerRegistry:
+  name: container-registry
+  healthCheckPath: /health
+  profile:
+  replicaCount: 1
+  hostAliases: []
+  image: idock.daumkakao.io/cloud-service/container-registry:latest
+  resources: {}
+  service:
+    type: NodePort
+    nodePort:
+  ingress:
+    enabled: false
+    ingressClassName: nginx
+    annotations: {}
+    hosts: []
+    tls:
+      enabled: false
+      secretName:
+  registryIngress:
+    enabled: false
+    ingressClassName: registry
+    annotations: {}
+    hosts: []
+    className:
+    tls:
+      enabled: false
+      secretName:
+
+admin:
+  enabled: false
+  name: container-registry-admin
+  healthCheckPath: /health
+  profile:
+  replicaCount: 1
+  hostAliases: []
+  image: cr.undercloud.io/devii/container-registry-admin:latest
+  resources: {}
+  service:
+    type: NodePort
+    nodePort:
+  ingress:
+    enabled: false
+    ingressClassName: nginx
+    annotations: {}
+    hosts: []
+    tls:
+      enabled: false
+      secretName:
+  registryIngress:
+    enabled: false
+    ingressClassName: registry
+    annotations: {}
+    hosts: []
+    className:
+    tls:
+      enabled: false
+      secretName:
+
+db:
+  enabled: true
+  name: container-registry-db
+  replicaCount: 1
+  image: idock.daumkakao.io/cloud-service/mysql:5.7
+  backupImage: idock.daumkakao.io/cloud-service/xtrabackup:1.0
+  resources: {}
+  affinity: {}
+  env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: password20220114
+    - name: MYSQL_USER
+      value: registry
+    - name: MYSQL_PASSWORD
+      value: registry20210728!@#
+    - name: MYSQL_DATABASE
+      value: registry
+  volume:
+    type: hostPath
+    spec: {}
+    size: 5Gi
+    storageClassName: db-sc
+  service:
+    type: NodePort
+    nodePort:

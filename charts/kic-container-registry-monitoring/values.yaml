@@ -1,0 +1,23 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+fluentd:
+  image: idock.daumkakao.io/cloud-service/cr-fluentd:v1.15-debian-mongo-1
+  scrapNamespace: cr-registry
+  env: []
+  logType: containerd
+
+db:
+  type: mongo
+  host: mongodb-svc.cr-service.svc.cluster.local
+  port: 27017
+  database: registry
+  username: registry
+  password: password20221027
+
+  ssl:
+    enabled: false
+    caPath:
+    certPath:
+    certKeyPath:

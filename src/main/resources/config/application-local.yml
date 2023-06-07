@@ -27,35 +27,17 @@ spring:
       - no-liquibase
       - mock-iam
       - mock-metering
+      - mock-trail
   devtools:
     restart:
       enabled: false
     livereload:
       enabled: false
-  datasource:
-    type: com.zaxxer.hikari.HikariDataSource
-    # TODO: Put JDBC URL
-    url: jdbc:mysql://localhost:3306/sample?useUnicode=true&characterEncoding=utf8&allowPublicKeyRetrieval=true&useSSL=false&useLegacyDatetimeCode=false&serverTimezone=Asia/Seoul&createDatabaseIfNotExist=true
-    username: user # TODO: Put DB Username
-    password: secret # TODO: Put DB Password
-    hikari:
-      poolName: Hikari
-      auto-commit: false
-      data-source-properties:
-        cachePrepStmts: true
-        prepStmtCacheSize: 250
-        prepStmtCacheSqlLimit: 2048
-        useServerPrepStmts: true
-      maximum-pool-size: 10
-  jpa:
-    show-sql: true
   # Replace by 'prod, faker' to add the faker context and have sample data loaded in production
-  liquibase:
-    contexts: dev
   thymeleaf:
     cache: true
   kafka:
-    bootstrap-servers: ucstg-log-kafka.k9e.io:9092
+    bootstrap-servers: localhost:9092
     template:
       default-topic: uc-log-mt.json
 # ===================================================================
@@ -78,7 +60,7 @@ spring:
 #     ciphers: TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 ,TLS_DHE_RSA_WITH_AES_128_GCM_SHA256 ,TLS_DHE_RSA_WITH_AES_256_GCM_SHA384 ,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384,TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,TLS_DHE_RSA_WITH_AES_128_CBC_SHA,TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,TLS_DHE_RSA_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_RSA_WITH_AES_256_CBC_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA,TLS_RSA_WITH_AES_256_CBC_SHA,TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA,TLS_RSA_WITH_CAMELLIA_256_CBC_SHA,TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA,TLS_RSA_WITH_CAMELLIA_128_CBC_SHA
 # ===================================================================
 server:
-  port: 8080
+  port: 8081
   compression:
     enabled: false
     mime-types: text/html,text/xml,text/plain,text/css, application/javascript, application/json
@@ -131,7 +113,7 @@ application:
     http: http://sec-proxy.k9e.io:3128
     https: http://sec-proxy.k9e.io:3128
     no-proxy: .cr-registry.svc.cluster.local,.k5dcr.io
-  outbound-url: http://host.docker.internal:8080
+  outbound-url: http://host.docker.internal:8081
   temp-path: /tmp #temp file path
   error-page: https://console.sandbox.kakaoi.io/40x.html
   kic-web-console:
@@ -149,3 +131,5 @@ application:
     region-code: kr-central-1
   cron-job:
     metering: 0 0/5 * * * ?
+  trail:
+    topic: uc-log-trail.json

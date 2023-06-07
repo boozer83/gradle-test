@@ -1,0 +1,5 @@
+Deployed Container-registry
+
+1. container-registry : app
+2. db : mariadb
+3. clair : clair, postgresql

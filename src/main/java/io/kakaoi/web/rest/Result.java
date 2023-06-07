@@ -2,7 +2,6 @@ package io.kakaoi.web.rest;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.kakaoi.config.Constants;
-import io.kakaoi.service.dto.PagingDTO;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.data.domain.Page;
 
@@ -87,15 +86,6 @@ public class Result<T> implements Serializable {
      */
     public static <T> Result<T> ok(@Nullable T data) {
         return of(Constants.CommonCode.OK, data);
-    }
-
-    /**
-     * 요청 처리 응답 시 성공 메시지를 보내기 위한 Result 객체 정적 생성 메서드
-     * @param data 응답 데이터
-     * @return 'CommonCode.OK'와 응답 데이터가 포함하여 생성된 Result 객체
-     */
-    public static <T> Result<PagingDTO<T>> okWithPaging(Page<T> data) {
-        return of(Constants.CommonCode.OK, new PagingDTO<>(data));
     }
 
     /**

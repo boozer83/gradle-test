@@ -7,7 +7,7 @@
 ## Docker Build
 
 ```shell
-docker build --no-cache --pull -t idock.daumkakao.io/cloud-service/sample:latest .
+docker build --no-cache --pull -t idock.daumkakao.io/cloud-service/log-proxy:latest .
 ```
 
 ## Local Development Run

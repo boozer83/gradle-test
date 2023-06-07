@@ -1,0 +1,121 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: cr-service
+createNamespaces:
+  - cr-registry
+
+defaultErrorIngresses:
+  - ingressClassName: nginx
+    tls:
+      enabled: false
+      secretName:
+  - ingressClassName: registry
+    tls:
+      enabled: false
+      secretName:
+
+containerRegistry:
+  profile: prod
+  image: cr.undercloud.io/devii/container-registry:v3.0.4-fix.1
+  replicaCount: 5
+  volumeMounts:
+    - mountPath: /secret/registry
+      name: registry-secret
+      readOnly: true
+  volumes:
+    - name: registry-secret
+      secret:
+        defaultMode: 420
+        secretName: registry-secret
+  service:
+    type: ClusterIP
+    nodePort:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 400 404 405 /40x.html;
+        location /40x.html{
+          proxy_pass https://console.kakaoi.io;
+        }
+        error_page 500 505 /50x.html;
+        location /50x.html{
+          proxy_pass https://console.kakaoi.io;
+        }
+    hosts:
+      - host: container-registry.p.k5d.io
+        paths:
+          - /
+  registryIngress:
+    enabled: true
+    ingressClassName: registry
+    hosts:
+      - host: kic-cr-service.kr-central-1.kcr.dev
+        paths:
+          - /
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 405 /405.html;
+        location /405.html {
+          return 405 '{"errors":[{"code":"UNSUPPORTED","message":"The operation is unsupported.","detail":{}}]}';
+        }
+
+        if ($request_method !~ ^(GET|POST|PUT|PATCH|HEAD)$) {
+          return 405 '{"errors":[{"code":"UNSUPPORTED","message":"The operation is unsupported.","detail":{}}]}';
+        }
+
+admin:
+  profile: prod
+  image: cr.undercloud.io/devii/container-registry-admin:v1.0.0
+  replicaCount: 3
+  service:
+    type: ClusterIP
+    nodePort:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/server-snippet: |
+        error_page 400 404 405 /40x.html;
+        location /40x.html{
+          proxy_pass https://console.kakaoi.io;
+        }
+        error_page 500 505 /50x.html;
+        location /50x.html{
+          proxy_pass https://console.kakaoi.io;
+        }
+    hosts:
+      - host: container-registry-admin.p.k5d.io
+        paths:
+          - /
+
+db:
+  image: cr.undercloud.io/devii/libs/mysql:5.7
+  backupImage: cr.undercloud.io/devii/libs/xtrabackup:1.0
+  replicaCount: 3
+  env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: password20220114
+    - name: MYSQL_USER
+      value: registry
+    - name: MYSQL_PASSWORD
+      value: registry20210728!@#
+    - name: MYSQL_DATABASE
+      value: registry
+  volume:
+    type: rbd
+    size: 30Gi
+    storageClassName: general
+  service:
+    type: ClusterIP
+    nodePort:
+
+secrets:
+  - name: registry-secret
+    type: Opaque
+    data:
+      server.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURURENDQWpRQ0NRQ0ZZSFRzbGs2RTRqQU5CZ2txaGtpRzl3MEJBUXNGQURCbk1Rc3dDUVlEVlFRR0V3SkwKVWpFWU1CWUdBMVVFQ2d3UGEyRnJZVzlsYm5SbGNuQnlhWE5sTVI4d0hRWURWUVFMREJaTGFVTWdRMjl1ZEdGcApibVZ5SUZKbFoybHpkSEo1TVIwd0d3WURWUVFEREJScmNpMWpaVzUwY21Gc0xUSXVhMk55TG1SbGRqQWdGdzB5Ck16QTFNalV3TWpFeU16QmFHQTh5TURVek1EVXhOekF5TVRJek1Gb3daekVMTUFrR0ExVUVCaE1DUzFJeEdEQVcKQmdOVkJBb01EMnRoYTJGdlpXNTBaWEp3Y21selpURWZNQjBHQTFVRUN3d1dTMmxESUVOdmJuUmhhVzVsY2lCUwpaV2RwYzNSeWVURWRNQnNHQTFVRUF3d1VhM0l0WTJWdWRISmhiQzB5TG10amNpNWtaWFl3Z2dFaU1BMEdDU3FHClNJYjNEUUVCQVFVQUE0SUJEd0F3Z2dFS0FvSUJBUURscGFaaWtEaHU2SDVPV1BzOW1RSW52TURBdHdJZUw1SnAKakxDTG1WTXptejBKZTd1V0hpWFVwbDAwVVlnSVdmZVZmcnhlZ0NJeGo2NzR0cFcyTGdIaVVhcDd3VEhzR0EyeApvcnQxQUFnYUJZcUJqSU1TYWdwNHNCNnYyRkh0MzkrV3VpNGV4RmF6dzMxSWpqaGoxaXJ6WW5kM21ZdEdyN2trCjJKZnN6NGZGU2Uxbzdxa2tnOTBhZGx3QUNLeVBaV0RQNGNoMG9XUVBZWm0wZG5RMXpjV1JSRW5sT1dNaEJUWnEKZ2ZPSU9PQU1hcGpBWk1OYzlXeHg4Y0dBbGcreDVLR2FPcld0OWZjY2JGNExkeXcvb0k1ck5wcDJEZ2pHZ2U1OApyZUtYa01hMll5MVQ3Z1QxU3BxeVd5TVpxRFIxdHRrZElyaVpXS2M0Y0k1cC9La0ZTU0hKQWdNQkFBRXdEUVlKCktvWklodmNOQVFFTEJRQURnZ0VCQUR3M2JNc2NCZDRueXltUTkvM2oydS84QndReHRGS2JCbXU1NEhQakc0ckUKRjhWVklsZWRqd3ZhNDEvYU11SVJEV3pqeWo4UGZTOGRDTHBmaEZHZWtWOUtXZUZIUzhMdG1LaUlsdnZkckJZRAowY2M0UHhUKzFYUWU2U3IwdWt4UFI3NHIxQlFLRmF2ZUlWbXBhUWVXT1RFVnlEVWwzakk2VjFMUWdkWjdoWkFVCjRKQnNpQUFIbXBNVG0zZ2Jzd2dhRGNIRGFnb0FBejBNNVZpQlprc0M3WXpyVE1JaUpKQzhjaUV6OTViMHhpRUEKQ0tVQ0lobWlFQ1JsVm9iU0t5MEMxSXB0cWF1dzl4ZmRCTXE0Zjg4dHdrZzZmZlJFSVNseWFrWFZrRVJWSmpDMgpJVGRReWR4OEVRdkpGR3QrSFpLc0UwNjVSUmpDZW90UC9DOHZNT2lPL2lVPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+      registry.jks: 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

@@ -31,6 +31,8 @@ public class ApplicationProperties {
 
     private CronJob cronJob;
 
+    private Trail trail;
+
     public Proxy getProxy() {
         return proxy;
     }
@@ -204,6 +206,19 @@ public class ApplicationProperties {
 
     }
 
+    public static class Trail {
+
+        private String topic;
+
+        public String getTopic() {
+            return topic;
+        }
+
+        public void setTopic(String topic) {
+            this.topic = topic;
+        }
+    }
+
     public Endpoint getKicWebConsole() {
         return kicWebConsole;
     }
@@ -242,5 +257,13 @@ public class ApplicationProperties {
 
     public void setCronJob(CronJob cronJob) {
         this.cronJob = cronJob;
+    }
+
+    public Trail getTrail() {
+        return trail;
+    }
+
+    public void setTrail(Trail trail) {
+        this.trail = trail;
     }
 }

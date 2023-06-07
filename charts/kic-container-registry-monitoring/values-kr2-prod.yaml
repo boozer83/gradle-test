@@ -1,0 +1,34 @@
+# Default values for helm.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+fluentd:
+  image: registry.undercloud.io/devii/libs/cr-fluentd:v1.15-debian-mongo-1
+  volumeMounts:
+    - mountPath: /secret
+      name: mongo-secret
+      readOnly: true
+  volumes:
+    - name: mongo-secret
+      secret:
+        defaultMode: 420
+        secretName: mongo-secret
+
+db:
+  type: mongo_replset
+  replicaSet: registry-mng
+  authSource: admin
+  nodes: registry-mng1.mongo.kr-central-2.kakaoi.in:27017,registry-mng2.mongo.kr-central-2.kakaoi.in:27017,registry-mng3.mongo.kr-central-2.kakaoi.in:27017
+  database: registry
+  username: registry
+  password: password20221027
+
+  ssl:
+    enabled: true
+    caPath: /secret/ca.cert
+
+secrets:
+  - name: mongo-secret
+    type: Opaque
+    data:
+      ca.cert: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURvekNDQW91Z0F3SUJBZ0lKQU5rWHJYQTlXbVNQTUEwR0NTcUdTSWIzRFFFQkN3VUFNR2N4Q3pBSkJnTlYKQkFZVEFrdFNNUXd3Q2dZRFZRUUlEQU5MVDFJeERqQU1CZ05WQkFjTUJWTmxiM1ZzTVJnd0ZnWURWUVFLREE5cgpZV3RoYjJWdWRHVnljSEpwYzJVeElEQWVCZ05WQkFNTUYyUmlaVUJyWVd0aGIyVnVkR1Z5Y0hKcGMyVXVZMjl0Ck1DQVhEVEl4TVRFeE5qQXlOVFF4TWxvWUR6SXhNakV4TURJek1ESTFOREV5V2pCbk1Rc3dDUVlEVlFRR0V3SkwKVWpFTU1Bb0dBMVVFQ0F3RFMwOVNNUTR3REFZRFZRUUhEQVZUWlc5MWJERVlNQllHQTFVRUNnd1BhMkZyWVc5bApiblJsY25CeWFYTmxNU0F3SGdZRFZRUUREQmRrWW1WQWEyRnJZVzlsYm5SbGNuQnlhWE5sTG1OdmJUQ0NBU0l3CkRRWUpLb1pJaHZjTkFRRUJCUUFEZ2dFUEFEQ0NBUW9DZ2dFQkFNNk5VaDhrRG5XYlpmZzVhQWVodUF2Y285MXMKdEF1aVJlSUtMVS9JRDZ5ZkNrUHZ6bDRLbzRZS0wyR1IxT21HL0VVdVBOY3NFYmlESDRjN3ZsS0hacG9rakR5Rgp1cVJhTlM3dXJOVVBqOEFScmFrTGhpQ1IzWE9WbVFjZGhPQTliQ1I5OHlqR3M3VkF1aDZaL2xwUzVxQzF0QVBSCkFZZGs1cnJZZVZodkRKSWludW1xcnFxYWFDT2N5SkFLRG1xL2dWQ1VKaU1aczBEQWNOVk02TFMyMU44Q2pPM00KY05RNHFYZDVnNy8yMXg3Wm1tcVpjZTArVFQ2QzZrUnoyTjZUTWVRdk9aS1AwcUl6U05MazBXWGNlNkVubzBGZAoxVFZCK2RaMVlObGpEMkIvSnIvMWxqN1FJdmUydVA2Sk1kTDFhV1BYQXRvdkhKNG9MaUdkV1ZRUTlLTUNBd0VBCkFhTlFNRTR3SFFZRFZSME9CQllFRkxxeTAxb0FPYjNNTmZlcUNwY1pRMlc3djhkSU1COEdBMVVkSXdRWU1CYUEKRkxxeTAxb0FPYjNNTmZlcUNwY1pRMlc3djhkSU1Bd0dBMVVkRXdRRk1BTUJBZjh3RFFZSktvWklodmNOQVFFTApCUUFEZ2dFQkFIcEsxNElaYkJCcE1xTTFlOEdjMS9VV29QMDVlcnlQdTJ5c0V4YmVIV2RUc1gvYUY2M2wxU2JzCjRyOGl1VG1ldFBFQVU5c1JNOUczbmRSVHpOZWFEMWpjcUt5UHViazJRbDd4OHVNWlJJRTd3SUZzWWFJWEUxNk0KYldhTWU4TnFqbEpMWkpJaHNiRzIvaEVUS1ZiZmFKeS8wRERucVllaXNwMDJKQnZmcnhhdmpaT3FPYjBqNVNxOApoQUNXNjcvdmdPTHdaQTFPRlFNSmRObTBuRngrNjRabERlZHM1MThqdUtYc0NWWE00aFlvQXh5U1JHVEFnZkJqCk5zQmsrSkRZWlY0Q1RIbko4Vm1QL1JOVzlKMVJwWTNXempRV29EMkdmcTJ1L29CVVN6TmpjR3AydHdZL1RUTDAKS0JROXN4TkFmL0w1b1dYTXB0SjZGdStvYmFySUhhST0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=

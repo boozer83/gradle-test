@@ -1,0 +1,129 @@
+{{ if .Values.admin.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.admin.name }}
+  labels:
+    app: {{ .Values.admin.name }}
+spec:
+  replicas: {{ .Values.admin.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.admin.name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.admin.name }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount }}
+      {{- with .Values.admin.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: container-registry
+          imagePullPolicy: Always
+          image: {{ .Values.admin.image }}
+          {{- with .Values.admin.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{ if .Values.admin.healthCheckPath }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.admin.healthCheckPath }}
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.admin.healthCheckPath }}
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          {{- end }}
+          command: [ "java" ]
+          args:
+            - "-XX:+UseContainerSupport"
+            - "-jar"
+            - "-Xms2048m"
+            - "-Xmx2048m"
+            - "-Dspring.profiles.active={{ .Values.admin.profile }}"
+            - "-Djava.security.egd=file:/dev/./urandom"
+            - "-Duser.timezone=Asia/Seoul"
+            - "-XX:MaxMetaspaceSize=512m"
+            - "-XX:MetaspaceSize=512m"
+            - "kic-container-registry-admin-server.jar"
+          {{- with .Values.admin.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.admin.name }}
+  name: {{ .Values.admin.name }}-svc
+spec:
+  ports:
+    - name: {{ .Values.admin.name }}
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+      {{ if eq .Values.admin.service.type "NodePort" }}
+      nodePort: {{ .Values.admin.service.nodePort }}
+      {{- end }}
+  selector:
+    app: {{ .Values.admin.name }}
+  type: {{ .Values.admin.service.type }}
+{{ if .Values.admin.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.admin.name }}-ing
+  {{- with .Values.admin.ingress.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.admin.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.admin.ingress.ingressClassName }}
+  {{- end }}
+  rules:
+    {{- range .Values.admin.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ . }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $.Values.admin.name }}-svc
+                port:
+                  number: 8080
+          {{- end }}
+    {{- end }}
+  {{ if .Values.admin.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.admin.ingress.hosts }}
+        - {{ .host | quote }}
+        {{- end }}
+      secretName: {{ .Values.admin.ingress.tls.secretName }}
+  {{- end }}
+{{- end }}
+{{- end }}
