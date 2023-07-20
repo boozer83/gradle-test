@@ -1,4 +1,4 @@
-FROM gradle:6.9.1-jdk8 AS build
+FROM docker.io/gradle:6.9.1-jdk8 AS build
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN gradle -Dhttp.proxyHost=sec-proxy.k9e.io -Dhttp.proxyPort=3128 -Dhttps.proxy
 
 ###
 
-FROM --platform=linux/amd64 eclipse-temurin:8-jre-focal AS app
+FROM --platform=linux/amd64 docker.io/eclipse-temurin:8-jre-focal AS app
 
 WORKDIR /app
 COPY --from=build /app/build/libs/server.jar .
