@@ -6,7 +6,7 @@ WORKDIR /app
 ADD . /app/
 
 # server mvn install
-RUN gradle -Dhttp.proxyHost=sec-proxy.k9e.io -Dhttp.proxyPort=3128 -Dhttps.proxyHost=sec-proxy.k9e.io -Dhttps.proxyPort=3128 -Dhttp.nonProxyHosts=localhost,127.0.0.1,127.0.0.0/8,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,.k9e.io,.kakaoi.com,.kakaoicdn.net,.k9etool.io,.k5d.io,.kakaoenterprise.com,.kakaoicloud.com,.kakaoi.io,.kakaoi.ai,.kakaoicloud.in,github.kakaoenterprise.in,mdock.daumkakao.io,idock.daumkakao.io clean bootJar --exclude-task asciidoctor --exclude-task test
+RUN gradle clean bootJar --exclude-task asciidoctor --exclude-task test
 
 ###
 
